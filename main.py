@@ -17,6 +17,12 @@
 from fastapi import FastAPI, HTTPException
 # HTTPException (utilizar para tratativas de erros)
 
+from pydantic import BaseModel
+#
+
+from typing import Optional
+#
+
 app = FastAPI()
 
 # Fabrica (onde produz os livros, precisa de um lugar para guarda-lo, ESTOQUE(Banco de Dados))
@@ -25,7 +31,17 @@ app = FastAPI()
 
 estoque = {}
 
-@app.get("/livros")
+class Livro(BaseModel):
+    nome: str
+    autor: str
+    ano: int
+
+class UpdateLivro(BaseModel):
+    nome: Optional[str] = None
+    autor: Optional[str] = None
+    ano: Optional[int] = None
+
+@app.get("/ler")
 def read_livros():
     if not estoque:
         return {"message": "Nenhum livro está no estoque!"}
@@ -33,33 +49,34 @@ def read_livros():
         return {"livros": estoque}
 
 #Livro: ID, Nome, Autor, Ano
-@app.post("/adiciona")
-def add_livro(id: int, nome: str, autor: str, quantidade: int):
+@app.post("/adicionar")
+def create_livro(id: int, livro: Livro):
     if id in estoque:
-        raise HTTPException(status_code=400, detail="Esse livro já existe!") # raise: função reservada para aparecer o HTTPException
-    elif nome in estoque:
-        return {"message": "Esse livro já existe na base de dados!"}
-    else:
-        estoque[id] = {
-            "nome": nome,
-            "autor": autor,
-            "quantidade": quantidade
-        }
-        return {"mensagem": "Livro criado com sucesso!"}
+        raise HTTPException(status_code=400, detail="Esse ID de livro já existe!") # raise: função reservada para aparecer o HTTPException
+    
+    for valor in estoque.values():
+        if valor["nome"] == livro.nome:
+            raise HTTPException(status_code=400, detail="Esse livro já existe na base de dados!")
+    
+    estoque[id] = livro.model_dump() # Serve para pegar tudo o que está em livro e colocar em ID
+    
+    return {"mensagem": "Livro criado com sucesso!", "livro": estoque[id]}
 
-@app.put("/atualiza/{id}")
-def update_livro(id: int, nome: str = None, autor: str = None, quantidade: int = None):
+@app.put("/atualizar/{id}")
+def update_livro(id: int, new_livro: UpdateLivro):
+    
     livro = estoque.get(id)
+    
     if not livro:
         raise HTTPException(status_code=404, detail="Livro não encontrado!")
     else:
-        if nome is not None:
-            livro["nome"] = nome
-        if autor is not None:
-            livro["autor"] = autor
-        if quantidade is not None:
-            livro["quantidade"] = quantidade
-        return {"message": "Atualização feita com sucesso!"}
+        if new_livro.nome is not None:
+            livro["nome"] = new_livro.nome
+        if new_livro.autor is not None:
+            livro["autor"] = new_livro.autor
+        if new_livro.ano is not None:
+            livro["ano"] = new_livro.ano
+        return {"message": "Atualização feita com sucesso!", "livro": livro}
 
 @app.delete("/deletar/{id}")
 def delete_livro(id: int):
