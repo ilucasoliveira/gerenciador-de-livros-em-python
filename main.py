@@ -16,12 +16,10 @@
 
 from fastapi import FastAPI, HTTPException
 # HTTPException (utilizar para tratativas de erros)
-
 from pydantic import BaseModel
-#
-
+# modelos que definem o formato dos dados que a API vai receber/devolver
 from typing import Optional
-#
+# serve para indicar que um campo pode ser daquele tipo ou NONE
 
 app = FastAPI()
 
@@ -35,11 +33,13 @@ class Livro(BaseModel):
     nome: str
     autor: str
     ano: int
+    sinopse: Optional[str] = None
 
 class UpdateLivro(BaseModel):
     nome: Optional[str] = None
     autor: Optional[str] = None
     ano: Optional[int] = None
+    sinopse: Optional[str] = None
 
 @app.get("/ler")
 def read_livros():
@@ -76,6 +76,8 @@ def update_livro(id: int, new_livro: UpdateLivro):
             livro["autor"] = new_livro.autor
         if new_livro.ano is not None:
             livro["ano"] = new_livro.ano
+        if new_livro.sinopse is not None:
+            livro["sinopse"] = new_livro.sinopse
         return {"message": "Atualização feita com sucesso!", "livro": livro}
 
 @app.delete("/deletar/{id}")
