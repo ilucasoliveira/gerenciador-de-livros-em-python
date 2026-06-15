@@ -14,6 +14,8 @@
 # Update
 # Delete
 
+# Documentação Swagger -> Documentar endpoints da nossa aplicação (nossa API): http://127.0.0.1:8000/docs
+
 from fastapi import FastAPI, HTTPException
 # HTTPException (utilizar para tratativas de erros)
 from pydantic import BaseModel
@@ -21,7 +23,15 @@ from pydantic import BaseModel
 from typing import Optional
 # serve para indicar que um campo pode ser daquele tipo ou NONE
 
-app = FastAPI()
+app = FastAPI(
+    title="Gerenciador de Livros API",
+    description="Esse gerenciador foi criado no intuito de aprender como utilizar API e seus métodos, funções e funcionabilidades.",
+    version="1.0.0",
+    contact={
+        "name":"Lucas de Oliveira",
+        "email":"lucasdeoliveira937@gmail.com"
+    }
+)
 
 # Fabrica (onde produz os livros, precisa de um lugar para guarda-lo, ESTOQUE(Banco de Dados))
 # Livraria ( precisa tambem de um ESTOQUE(Banco de Dados) para guardar os novos livros)
