@@ -1,1 +1,190 @@
-# gerenciador-de-livros-em-python
+# 📚 Gerenciador de Livros — API REST com FastAPI
+
+API RESTful de gerenciamento de livros desenvolvida com **FastAPI** e **Python**, como projeto prático do curso **Full Stack Python da EBAC**.
+
+---
+
+## 🧠 Sobre o projeto
+
+Este projeto simula o back-end de uma livraria, expondo endpoints CRUD para gerenciar um catálogo de livros. O armazenamento é feito em memória (dicionário Python), sem banco de dados, permitindo o foco total no aprendizado de FastAPI, Pydantic, autenticação HTTP Basic e boas práticas de API REST.
+
+---
+
+## 🚀 Tecnologias utilizadas
+
+- [Python 3.14+](https://www.python.org/)
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [Pydantic](https://docs.pydantic.dev/)
+- [Poetry](https://python-poetry.org/) — gerenciamento de dependências
+- Swagger UI (embutido no FastAPI) — documentação interativa
+
+---
+
+## 📋 Funcionalidades
+
+| Método | Endpoint          | Descrição                         | Auth |
+|--------|-------------------|-----------------------------------|------|
+| GET    | `/ler`            | Lista os livros com paginação     | ✅   |
+| POST   | `/adicionar`      | Adiciona um novo livro            | ✅   |
+| PUT    | `/atualizar/{id}` | Atualiza dados de um livro        | ✅   |
+| DELETE | `/deletar/{id}`   | Remove um livro pelo ID           | ✅   |
+
+> Todos os endpoints requerem autenticação via **HTTP Basic Auth**.
+
+---
+
+## 🔐 Autenticação
+
+A API utiliza **HTTP Basic Authentication**. Para acessar qualquer endpoint, informe as credenciais:
+
+```
+Usuário: admin
+Senha:   admin
+```
+
+> ⚠️ As credenciais estão fixas no código por ser um projeto de aprendizado. Em produção, utilize variáveis de ambiente e senhas seguras.
+
+---
+
+## 🗂️ Estrutura do projeto
+
+```
+gerenciador-de-livros-em-python/
+├── main.py           # Código principal da API (rotas, modelos, autenticação)
+├── pyproject.toml    # Configuração do projeto e dependências (Poetry)
+├── poetry.lock       # Lock file das dependências
+└── README.md
+```
+
+---
+
+## ⚙️ Como executar localmente
+
+### Pré-requisitos
+
+- Python 3.14+
+- [Poetry](https://python-poetry.org/docs/#installation) instalado
+
+### Passo a passo
+
+```bash
+# 1. Clone o repositório
+git clone https://github.com/ilucasoliveira/gerenciador-de-livros-em-python.git
+cd gerenciador-de-livros-em-python
+
+# 2. Instale as dependências
+poetry install
+
+# 3. Ative o ambiente virtual
+poetry shell
+
+# 4. Inicie o servidor
+fastapi dev main.py
+```
+
+A API estará disponível em: `http://127.0.0.1:8000`
+
+---
+
+## 📖 Documentação interativa
+
+Após subir o servidor, acesse a documentação **Swagger UI** gerada automaticamente pelo FastAPI:
+
+```
+http://127.0.0.1:8000/docs
+```
+
+Lá você pode visualizar e testar todos os endpoints diretamente pelo navegador.
+
+---
+
+## 📦 Exemplos de uso
+
+### Adicionar um livro
+
+```http
+POST /adicionar?id=1
+Authorization: Basic YWRtaW46YWRtaW4=
+Content-Type: application/json
+
+{
+  "nome": "O Senhor dos Anéis",
+  "autor": "J.R.R. Tolkien",
+  "ano": 1954,
+  "sinopse": "A jornada de Frodo para destruir o Um Anel."
+}
+```
+
+### Listar livros (com paginação)
+
+```http
+GET /ler?page=1&limit=10
+Authorization: Basic YWRtaW46YWRtaW4=
+```
+
+### Atualizar um livro
+
+```http
+PUT /atualizar/1
+Authorization: Basic YWRtaW46YWRtaW4=
+Content-Type: application/json
+
+{
+  "sinopse": "Uma épica aventura pela Terra Média."
+}
+```
+
+### Deletar um livro
+
+```http
+DELETE /deletar/1
+Authorization: Basic YWRtaW46YWRtaW4=
+```
+
+---
+
+## 📐 Modelo de dados
+
+### Livro (criação)
+
+| Campo    | Tipo          | Obrigatório | Descrição              |
+|----------|---------------|-------------|------------------------|
+| nome     | `string`      | ✅          | Título do livro        |
+| autor    | `string`      | ✅          | Nome do autor          |
+| ano      | `int`         | ✅          | Ano de publicação      |
+| sinopse  | `string`      | ❌          | Resumo do livro        |
+
+### UpdateLivro (atualização parcial)
+
+Todos os campos são opcionais, permitindo atualizações parciais (PATCH-like via PUT).
+
+---
+
+## 🎓 Contexto de aprendizado
+
+Projeto desenvolvido como exercício prático do curso **Full Stack Python** da [EBAC](https://ebaconline.com.br/), cobrindo os seguintes conceitos:
+
+- Criação de APIs REST com FastAPI
+- Métodos HTTP: `GET`, `POST`, `PUT`, `DELETE`
+- Validação de dados com **Pydantic** e `BaseModel`
+- Campos opcionais com `Optional` do `typing`
+- Autenticação com **HTTP Basic Auth** e `compare_digest`
+- Tratamento de erros com `HTTPException`
+- Injeção de dependências com `Depends`
+- Paginação de resultados
+- Documentação automática via **Swagger UI**
+- Gerenciamento de projeto com **Poetry**
+
+---
+
+## 👤 Autor
+
+**Lucas de Oliveira**  
+GitHub: [ilucasoliveira](https://github.com/ilucasoliveira)  
+LinkedIn: [linkedin.com/in/lucas-de-oliveira-dev](https://www.linkedin.com/in/lucas-de-oliveira-dev)
+
+---
+
+## 📄 Licença
+
+Este projeto é de uso educacional e não possui licença formal.
