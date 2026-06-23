@@ -16,12 +16,16 @@
 
 # Documentação Swagger -> Documentar endpoints da nossa aplicação (nossa API): http://127.0.0.1:8000/docs
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 # HTTPException (utilizar para tratativas de erros)
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+# usado para implementar HTTP Basic
 from pydantic import BaseModel
 # modelos que definem o formato dos dados que a API vai receber/devolver
 from typing import Optional
 # serve para indicar que um campo pode ser daquele tipo ou NONE
+from secrets import compare_digest
+# serve para gerar valor aleatórios criptograficamente seguros
 
 app = FastAPI(
     title="Gerenciador de Livros API",
@@ -37,6 +41,11 @@ app = FastAPI(
 # Livraria ( precisa tambem de um ESTOQUE(Banco de Dados) para guardar os novos livros)
 # Como ainda não sei Bando de Dados iremos adicionar os dados em um Dicionário
 
+MEU_USUARIO = "admin"
+MINHA_SENHA = "admin"
+
+security = HTTPBasic()
+
 estoque = {}
 
 class Livro(BaseModel):
@@ -51,16 +60,41 @@ class UpdateLivro(BaseModel):
     ano: Optional[int] = None
     sinopse: Optional[str] = None
 
+def autenticar_usuario(credentials: HTTPBasicCredentials = Depends(security)):
+    is_username_corrrect = compare_digest(credentials.username, MEU_USUARIO)
+    is_password_correct = compare_digest(credentials.password, MINHA_SENHA)
+    
+    if not(is_username_corrrect and is_password_correct):
+        raise HTTPException(status_code=401, detail="Usuário ou senha incorretos", headers={"WWW-Authenticate": "Basic"})
+    
+    return credentials
+
 @app.get("/ler")
-def read_livros():
+def read_livros(page: int= 1, limit: int= 10, credentials: HTTPBasicCredentials = Depends(autenticar_usuario)):
+    if page < 1 or limit < 1:
+        raise HTTPException(status_code=400, detail="Pagina ou Limite estão inválidos!")
+    
     if not estoque:
-        return {"message": "Nenhum livro está no estoque!"}
-    else:
-        return {"livros": estoque}
+        return {"message":"Não existe nenhum livro!"}
+    
+    start = (page - 1) * limit
+    end = start + limit
+    
+    livros_paginados = [
+        {"id": id, "nome": livro_data["nome"], "autor": livro_data["autor"], "ano": livro_data["ano"], "sinopse": livro_data["sinopse"]}
+        for id, livro_data in list(estoque.items())[start: end]
+    ]
+    
+    return {
+        "page": page,
+        "limit": limit,
+        "total": len(estoque),
+        "livros": livros_paginados
+    }
 
 #Livro: ID, Nome, Autor, Ano
 @app.post("/adicionar")
-def create_livro(id: int, livro: Livro):
+def create_livro(id: int, livro: Livro, credentials: HTTPBasicCredentials = Depends(autenticar_usuario)):
     if id in estoque:
         raise HTTPException(status_code=400, detail="Esse ID de livro já existe!") # raise: função reservada para aparecer o HTTPException
     
@@ -73,7 +107,7 @@ def create_livro(id: int, livro: Livro):
     return {"mensagem": "Livro criado com sucesso!", "livro": estoque[id]}
 
 @app.put("/atualizar/{id}")
-def update_livro(id: int, new_livro: UpdateLivro):
+def update_livro(id: int, new_livro: UpdateLivro, credentials: HTTPBasicCredentials = Depends(autenticar_usuario)):
     
     livro = estoque.get(id)
     
@@ -91,7 +125,7 @@ def update_livro(id: int, new_livro: UpdateLivro):
         return {"message": "Atualização feita com sucesso!", "livro": livro}
 
 @app.delete("/deletar/{id}")
-def delete_livro(id: int):
+def delete_livro(id: int, credentials: HTTPBasicCredentials = Depends(autenticar_usuario)):
     if id not in estoque:
         raise HTTPException(status_code=404, detail="Livro não encontrado!")
     else:
