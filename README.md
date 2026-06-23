@@ -181,7 +181,7 @@ Projeto desenvolvido como exercício prático do curso **Full Stack Python** da 
 
 **Lucas de Oliveira**  
 GitHub: [ilucasoliveira](https://github.com/ilucasoliveira)  
-LinkedIn: [linkedin.com/in/lucas-de-oliveira-dev](https://www.linkedin.com/in/lucas-de-oliveira-dev)
+LinkedIn: [linkedin.com/in/lucas-de-oliveira-dev](https://www.linkedin.com/in/ilucasoliveira/)
 
 ---
 
