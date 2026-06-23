@@ -77,12 +77,14 @@ def read_livros(page: int= 1, limit: int= 10, credentials: HTTPBasicCredentials 
     if not estoque:
         return {"message":"Não existe nenhum livro!"}
     
+    livros_ordenados = sorted(estoque.items(), key=lambda item:item[0])
+    
     start = (page - 1) * limit
     end = start + limit
     
     livros_paginados = [
         {"id": id, "nome": livro_data["nome"], "autor": livro_data["autor"], "ano": livro_data["ano"], "sinopse": livro_data["sinopse"]}
-        for id, livro_data in list(estoque.items())[start: end]
+        for id, livro_data in livros_ordenados[start: end]
     ]
     
     return {
