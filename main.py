@@ -16,16 +16,16 @@
 
 # Documentação Swagger -> Documentar endpoints da nossa aplicação (nossa API): http://127.0.0.1:8000/docs
 
+estoque = {}
+
 from fastapi import FastAPI, HTTPException, Depends
-# HTTPException (utilizar para tratativas de erros)
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-# usado para implementar HTTP Basic
-from pydantic import BaseModel
-# modelos que definem o formato dos dados que a API vai receber/devolver
-from typing import Optional
-# serve para indicar que um campo pode ser daquele tipo ou NONE
-from secrets import compare_digest
-# serve para gerar valor aleatórios criptograficamente seguros
+from fastapi.security import HTTPBasicCredentials
+
+from auth import user_authenticate
+from models import Livro
+from schemas import SchemaLivro, SchemaUpdateLivro, SchemaBookResponse
+from database import get_db
+from sqlalchemy.orm import Session
 
 app = FastAPI(
     title="Gerenciador de Livros API",
@@ -37,99 +37,68 @@ app = FastAPI(
     }
 )
 
-# Fabrica (onde produz os livros, precisa de um lugar para guarda-lo, ESTOQUE(Banco de Dados))
-# Livraria ( precisa tambem de um ESTOQUE(Banco de Dados) para guardar os novos livros)
-# Como ainda não sei Bando de Dados iremos adicionar os dados em um Dicionário
-
-MEU_USUARIO = "admin"
-MINHA_SENHA = "admin"
-
-security = HTTPBasic()
-
-estoque = {}
-
-class Livro(BaseModel):
-    nome: str
-    autor: str
-    ano: int
-    sinopse: Optional[str] = None
-
-class UpdateLivro(BaseModel):
-    nome: Optional[str] = None
-    autor: Optional[str] = None
-    ano: Optional[int] = None
-    sinopse: Optional[str] = None
-
-def autenticar_usuario(credentials: HTTPBasicCredentials = Depends(security)):
-    is_username_corrrect = compare_digest(credentials.username, MEU_USUARIO)
-    is_password_correct = compare_digest(credentials.password, MINHA_SENHA)
-    
-    if not(is_username_corrrect and is_password_correct):
-        raise HTTPException(status_code=401, detail="Usuário ou senha incorretos", headers={"WWW-Authenticate": "Basic"})
-    
-    return credentials
-
 @app.get("/ler")
-def read_livros(page: int= 1, limit: int= 10, credentials: HTTPBasicCredentials = Depends(autenticar_usuario)):
+def read_livros(page: int= 1, limit: int= 10, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
     if page < 1 or limit < 1:
         raise HTTPException(status_code=400, detail="Pagina ou Limite estão inválidos!")
     
-    if not estoque:
-        return {"message":"Não existe nenhum livro!"}
+    livros = db.query(Livro).offset((page - 1) * limit).limit(limit).all()
     
-    livros_ordenados = sorted(estoque.items(), key=lambda item:item[0])
+    if not livros:
+        raise HTTPException(status_code=404, detail="Not Found")
     
-    start = (page - 1) * limit
-    end = start + limit
-    
-    livros_paginados = [
-        {"id": id, "nome": livro_data["nome"], "autor": livro_data["autor"], "ano": livro_data["ano"], "sinopse": livro_data["sinopse"]}
-        for id, livro_data in livros_ordenados[start: end]
-    ]
+    total_livros = db.query(Livro).count()
     
     return {
         "page": page,
         "limit": limit,
-        "total": len(estoque),
-        "livros": livros_paginados
+        "total": total_livros,
+        "livros": [{"id": i.id, "nome": i.nome, "autor": i.autor, "ano": i.ano, "sinopse": i.sinopse} for i in livros]
     }
 
 #Livro: ID, Nome, Autor, Ano
-@app.post("/adicionar")
-def create_livro(id: int, livro: Livro, credentials: HTTPBasicCredentials = Depends(autenticar_usuario)):
-    if id in estoque:
-        raise HTTPException(status_code=400, detail="Esse ID de livro já existe!") # raise: função reservada para aparecer o HTTPException
+@app.post("/adicionar", status_code=201, response_model=SchemaBookResponse)
+def create_livro( livro: SchemaLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
+    conflict = db.query(Livro).filter(Livro.nome == livro.nome).first()
+    if conflict:
+        raise HTTPException(status_code=409, detail="Livro já adicionado a biblioteca!")
     
-    for valor in estoque.values():
-        if valor["nome"] == livro.nome:
-            raise HTTPException(status_code=400, detail="Esse livro já existe na base de dados!")
+    new_livro = Livro(**livro.model_dump())
     
-    estoque[id] = livro.model_dump() # Serve para pegar tudo o que está em livro e colocar em ID
+    db.add(new_livro)
+    db.commit()
+    db.refresh(new_livro)
     
-    return {"mensagem": "Livro criado com sucesso!", "livro": estoque[id]}
+    return new_livro
 
-@app.put("/atualizar/{id}")
-def update_livro(id: int, new_livro: UpdateLivro, credentials: HTTPBasicCredentials = Depends(autenticar_usuario)):
+@app.put("/atualizar/{id}", response_model=SchemaBookResponse)
+def update_livro(id: int, new_livro: SchemaUpdateLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
     
-    livro = estoque.get(id)
+    livro = db.query(Livro).filter(Livro.id == id).first()
     
     if not livro:
         raise HTTPException(status_code=404, detail="Livro não encontrado!")
-    else:
-        if new_livro.nome is not None:
-            livro["nome"] = new_livro.nome
-        if new_livro.autor is not None:
-            livro["autor"] = new_livro.autor
-        if new_livro.ano is not None:
-            livro["ano"] = new_livro.ano
-        if new_livro.sinopse is not None:
-            livro["sinopse"] = new_livro.sinopse
-        return {"message": "Atualização feita com sucesso!", "livro": livro}
+    
+    if new_livro.nome is not None:
+        livro.nome = new_livro.nome
+    if new_livro.autor is not None:
+        livro.autor = new_livro.autor
+    if new_livro.ano is not None:
+        livro.ano = new_livro.ano
+    if new_livro.sinopse is not None:
+        livro.sinopse = new_livro.sinopse
+    
+    db.commit()
+    db.refresh(livro)
+    
+    return livro
 
-@app.delete("/deletar/{id}")
-def delete_livro(id: int, credentials: HTTPBasicCredentials = Depends(autenticar_usuario)):
-    if id not in estoque:
+@app.delete("/deletar/{id}", status_code=204)
+def delete_livro(id: int, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
+    livro = db.query(Livro).filter(Livro.id == id).first()
+    
+    if livro is None:
         raise HTTPException(status_code=404, detail="Livro não encontrado!")
-    else:
-        del estoque[id]
-        return {"message": "Livro removido com sucesso!"}
+    
+    db.delete(livro)
+    db.commit()
