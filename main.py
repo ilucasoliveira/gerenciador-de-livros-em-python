@@ -1,23 +1,3 @@
-# API de Livros 
-
-# GET, POST, PUT, DELETE
-
-# POST - Adiciona novos livros (Create)
-# GET - Buscar os dados dos livros (Read)
-# PUT - Atualiza informações nos livros (Update)
-# DELETE - Deleta informações nos livros (Delete)
-
-# CRUD
-
-# Create
-# Read
-# Update
-# Delete
-
-# Documentação Swagger -> Documentar endpoints da nossa aplicação (nossa API): http://127.0.0.1:8000/docs
-
-estoque = {}
-
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import HTTPBasicCredentials
 

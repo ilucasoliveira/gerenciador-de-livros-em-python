@@ -1,12 +1,15 @@
 import os
+from dotenv import load_dotenv
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from secrets import compare_digest
 
-security = HTTPBasic()
+load_dotenv()
 
 USUARIO = os.getenv("MEU_USUARIO")
 SENHA = os.getenv("MINHA_SENHA")
+
+security = HTTPBasic()
 
 def user_authenticate(credentials: HTTPBasicCredentials=Depends(security)):
     is_username_correct = compare_digest(credentials.username, USUARIO)

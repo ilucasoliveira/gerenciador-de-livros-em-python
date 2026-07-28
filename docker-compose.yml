@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:18
+    container_name: livros-db # Não é obrigatório, é conveniência, dando o nome ele fica fixo no que eu escolhi.
+    restart: unless-stopped # Define o que o Docker faz quando o container morre. unless-stopped: reinicia sempre, exceto quando eu faço parar a mão.
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "5433:5432" # 5432 do Windows está ocupada pelo seu PG17 (lado esquerdo) (poderia ser qualquer número)
+    volumes:
+      - pgdata:/var/lib/postgresql # "pgdata": nome poderia ser outro; "var/lib/postgresql": pasta dentro do container onde o Postgres grava os dados. (imagem oficial - Docker Hub)
+    healthcheck: # É um teste que o Docker roda repetidamente para saber se o container está realmente funcionando, não só ligado.
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s # roda a cada 5s
+      timeout: 5s # se travar mais que isso, conta como falha
+      retries: 10 # 10 falhas seguidas = marca como unhealthy
+
+  app:
+    build: .
+    container_name: livros-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000" # "direita": porque é o que esta no command(aqui/Dockerfile); "esquerda": é porque estava livre no meu Windows, poderia ser qualquer outro.
+    volumes:
+      - .:/app # ".": pasta NO MEU WINDOWS (ONDE ESTÁ O DOCKER); "/app": pasta DENTRO do container
+    env_file:
+      - .env
+    depends_on: # segura o app até o db estar pronto de verdade. É a peça queusa o healthcheck.
+      db:
+        condition: service_healthy # usa essa informação para segurar a partida
+    command:
+      ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+volumes:
+  pgdata:
