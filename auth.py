@@ -9,6 +9,12 @@ load_dotenv()
 USUARIO = os.getenv("MEU_USUARIO")
 SENHA = os.getenv("MINHA_SENHA")
 
+if not USUARIO or not SENHA:
+    raise RuntimeError(
+        "Variáveis de ambiente MEU_USUARIO e MINHA_SENHA são obrigatórias. "
+        "Defina-as no arquivo .env antes de subir a aplicação."
+    )
+
 security = HTTPBasic()
 
 def user_authenticate(credentials: HTTPBasicCredentials=Depends(security)):

@@ -9,7 +9,7 @@ class Base(DeclarativeBase):
 class Livro(Base):
     __tablename__="livros"
     id: Mapped[int] = mapped_column(primary_key=True)
-    nome: Mapped[str] = mapped_column(String(300))
+    nome: Mapped[str] = mapped_column(String(300), unique=True)
     autor: Mapped[str] = mapped_column(String(200))
     ano: Mapped[int] = mapped_column(Integer)
     sinopse: Mapped[Optional[str]] = mapped_column(String(1000), default=None)

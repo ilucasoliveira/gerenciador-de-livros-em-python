@@ -8,10 +8,21 @@ class SchemaLivro(BaseModel):
     ano: int=Field(ge=1000, le=date.today().year, description="Ano de publicação")
     sinopse: Optional[str]=Field(default=None, max_length=1000, description="Descrição do livro")
 
-class SchemaBookResponse(SchemaLivro):
+class SchemaLivroResponse(SchemaLivro):
     id: int
 
-class SchemaUpdateLivro(SchemaLivro):
+class SchemaLivrosOrdenacaoResponse(BaseModel):
+    page: int
+    limit: int
+    total: int
+    total_pages: int
+    livros: list[SchemaLivroResponse]
+
+class SchemaUpdateLivro(BaseModel):
     nome: Optional[str]=Field(default=None, min_length=1, max_length=300)
     autor: Optional[str]=Field(default=None, min_length=1, max_length=200)
     ano: Optional[int]=Field(default=None, ge=1000, le=date.today().year)
+    sinopse: Optional[str]=Field(default=None, max_length=1000)
+
+class SchemaUpdateLivroResponse(SchemaUpdateLivro):
+    id: int

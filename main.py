@@ -3,9 +3,11 @@ from fastapi.security import HTTPBasicCredentials
 
 from auth import user_authenticate
 from models import Livro
-from schemas import SchemaLivro, SchemaUpdateLivro, SchemaBookResponse
+from schemas import SchemaLivro, SchemaLivroResponse, SchemaLivrosOrdenacaoResponse, SchemaUpdateLivro ,SchemaUpdateLivroResponse
 from database import get_db
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 app = FastAPI(
     title="Gerenciador de Livros API",
@@ -17,67 +19,76 @@ app = FastAPI(
     }
 )
 
-@app.get("/ler")
-def read_livros(page: int= 1, limit: int= 10, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
-    if page < 1 or limit < 1:
-        raise HTTPException(status_code=400, detail="Pagina ou Limite estão inválidos!")
-    
-    livros = db.query(Livro).offset((page - 1) * limit).limit(limit).all()
-    
-    if not livros:
-        raise HTTPException(status_code=404, detail="Not Found")
-    
-    total_livros = db.query(Livro).count()
-    
-    return {
-        "page": page,
-        "limit": limit,
-        "total": total_livros,
-        "livros": [{"id": i.id, "nome": i.nome, "autor": i.autor, "ano": i.ano, "sinopse": i.sinopse} for i in livros]
-    }
+@app.get("/")
+def health_check():
+    return {"message":"OK"}
 
 #Livro: ID, Nome, Autor, Ano
-@app.post("/adicionar", status_code=201, response_model=SchemaBookResponse)
+@app.post("/adicionar", status_code=201, response_model=SchemaLivroResponse)
 def create_livro( livro: SchemaLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
-    conflict = db.query(Livro).filter(Livro.nome == livro.nome).first()
+    
+    conflict = db.execute(select(Livro).filter(Livro.nome == livro.nome)).scalars().first()
     if conflict:
         raise HTTPException(status_code=409, detail="Livro já adicionado a biblioteca!")
     
     new_livro = Livro(**livro.model_dump())
     
-    db.add(new_livro)
-    db.commit()
-    db.refresh(new_livro)
+    try:
+        db.add(new_livro)
+        db.commit()
+        db.refresh(new_livro)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Não foi possível adicionar esse livro. Tente Novamente!")
     
     return new_livro
 
-@app.put("/atualizar/{id}", response_model=SchemaBookResponse)
-def update_livro(id: int, new_livro: SchemaUpdateLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
+@app.get("/ler", status_code=200, response_model=SchemaLivrosOrdenacaoResponse)
+def read_livros(page: int= 1, limit: int= 10, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
+    if page < 1 or limit < 1:
+        raise HTTPException(status_code=400, detail="Pagina ou Limite estão inválidos!")
     
-    livro = db.query(Livro).filter(Livro.id == id).first()
+    livros = db.execute(select(Livro).offset((page - 1)* limit).limit(limit)).scalars().all()
+    
+    total_livros = db.execute(select(func.count(Livro.id))).scalar()
+    
+    total_pages = (total_livros + limit - 1) // limit
+    
+    return {
+        "page": page,
+        "limit": limit,
+        "total": total_livros,
+        "total_pages": total_pages,
+        "livros": [{"id": i.id, "nome": i.nome, "autor": i.autor, "ano": i.ano, "sinopse": i.sinopse} for i in livros]
+    }
+
+@app.put("/atualizar/{id}", status_code=200,response_model=SchemaUpdateLivroResponse)
+def update_livro(id: int, update_livro: SchemaUpdateLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
+    
+    livro = db.execute(select(Livro).filter(Livro.id == id)).scalars().first()
     
     if not livro:
         raise HTTPException(status_code=404, detail="Livro não encontrado!")
     
-    if new_livro.nome is not None:
-        livro.nome = new_livro.nome
-    if new_livro.autor is not None:
-        livro.autor = new_livro.autor
-    if new_livro.ano is not None:
-        livro.ano = new_livro.ano
-    if new_livro.sinopse is not None:
-        livro.sinopse = new_livro.sinopse
+    novo_dado = update_livro.model_dump(exclude_unset=True)
     
-    db.commit()
-    db.refresh(livro)
+    for chave, valor in novo_dado.items():
+        setattr(livro, chave, valor)
+    
+    try:
+        db.commit()
+        db.refresh(livro)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Já existe um livro com esse nome. Tente Novamente!")
     
     return livro
 
 @app.delete("/deletar/{id}", status_code=204)
 def delete_livro(id: int, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
-    livro = db.query(Livro).filter(Livro.id == id).first()
+    livro = db.execute(select(Livro).filter(Livro.id == id)).scalars().first()
     
-    if livro is None:
+    if not livro:
         raise HTTPException(status_code=404, detail="Livro não encontrado!")
     
     db.delete(livro)

@@ -14,5 +14,7 @@ SessionLocal = sessionmaker(bind=engine)
 
 def get_db():
     db = SessionLocal()
-    yield db
-    db.close()
+    try:
+        yield db
+    finally:
+        db.close()

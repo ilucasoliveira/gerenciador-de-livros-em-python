@@ -2,7 +2,7 @@
 
 API RESTful de gerenciamento de livros desenvolvida com **FastAPI**, **SQLAlchemy** e **PostgreSQL**, totalmente containerizada com **Docker Compose**. Projeto prático do curso **Full Stack Python da EBAC**.
 
-> Sobe com dois comandos. Não é preciso instalar Python, Poetry ou PostgreSQL na máquina — só Docker.
+> Sobe com dois comandos. Não é preciso instalar Python, Poetry ou PostgreSQL na máquina, só Docker.
 
 ---
 
@@ -16,16 +16,16 @@ A aplicação roda em dois containers orquestrados pelo Docker Compose: um para 
 
 ## 🚀 Tecnologias utilizadas
 
-- [Docker](https://www.docker.com/) e **Docker Compose** — containerização e orquestração
+- [Docker](https://www.docker.com/) e **Docker Compose**: containerização e orquestração
 - [Python 3.14](https://www.python.org/)
 - [FastAPI](https://fastapi.tiangolo.com/)
-- [Uvicorn](https://www.uvicorn.org/) — servidor ASGI
-- [SQLAlchemy](https://www.sqlalchemy.org/) — ORM
+- [Uvicorn](https://www.uvicorn.org/): servidor ASGI
+- [SQLAlchemy](https://www.sqlalchemy.org/): ORM
 - [PostgreSQL 18](https://www.postgresql.org/) (via `psycopg2-binary`)
-- [Pydantic](https://docs.pydantic.dev/) — validação de dados
-- [python-dotenv](https://pypi.org/project/python-dotenv/) — variáveis de ambiente
-- [Poetry](https://python-poetry.org/) — gerenciamento de dependências
-- Swagger UI (embutido no FastAPI) — documentação interativa
+- [Pydantic](https://docs.pydantic.dev/): validação de dados
+- [python-dotenv](https://pypi.org/project/python-dotenv/): variáveis de ambiente
+- [Poetry](https://python-poetry.org/): gerenciamento de dependências
+- Swagger UI (embutido no FastAPI): documentação interativa
 
 ---
 
@@ -57,14 +57,15 @@ A API acessa o banco pelo hostname `db` na rede interna do Compose. A porta `543
 
 ## 📋 Funcionalidades
 
-| Método | Endpoint          | Descrição                     | Auth |
-| ------ | ----------------- | ----------------------------- | ---- |
-| GET    | `/ler`            | Lista os livros com paginação | ✅   |
-| POST   | `/adicionar`      | Adiciona um novo livro        | ✅   |
-| PUT    | `/atualizar/{id}` | Atualiza dados de um livro    | ✅   |
-| DELETE | `/deletar/{id}`   | Remove um livro pelo ID       | ✅   |
+| Método | Endpoint          | Descrição                       | Auth |
+| ------ | ----------------- | ------------------------------- | ---- |
+| GET    | `/`               | Health check da aplicação       | ❌   |
+| GET    | `/ler`            | Lista os livros com paginação   | ✅   |
+| POST   | `/adicionar`      | Adiciona um novo livro          | ✅   |
+| PUT    | `/atualizar/{id}` | Atualização parcial de um livro | ✅   |
+| DELETE | `/deletar/{id}`   | Remove um livro pelo ID         | ✅   |
 
-> Todos os endpoints requerem autenticação via **HTTP Basic Auth**.
+> Com exceção do health check, todos os endpoints requerem autenticação via **HTTP Basic Auth**.
 
 ---
 
@@ -85,24 +86,32 @@ git clone https://github.com/ilucasoliveira/gerenciador-de-livros-em-python.git
 cd gerenciador-de-livros-em-python
 ```
 
-**2. Crie o arquivo `.env` na raiz**
+**2. Crie o arquivo `.env` a partir do exemplo**
+
+```bash
+cp .env.example .env
+```
+
+Depois abra o `.env` e preencha os valores:
 
 ```env
 # Conexão da aplicação com o banco
 # ATENÇÃO: o host é "db" (nome do serviço no Compose), não "localhost"
-DATABASE_URL=postgresql://postgres:sua_senha@db:5432/backend_book_ebac
+DATABASE_URL=postgresql://postgres:SUA_SENHA_AQUI@db:5432/backend_book_ebac
 
 # Credenciais do PostgreSQL (usadas pelo container do banco)
 POSTGRES_USER=postgres
-POSTGRES_PASSWORD=sua_senha
+POSTGRES_PASSWORD=SUA_SENHA_AQUI
 POSTGRES_DB=backend_book_ebac
 
 # Credenciais do HTTP Basic Auth da API
-MEU_USUARIO=seu_usuario
-MINHA_SENHA=sua_senha_da_api
+MEU_USUARIO=
+MINHA_SENHA=
 ```
 
 > ⚠️ A senha do banco aparece **duas vezes**: em `DATABASE_URL` e em `POSTGRES_PASSWORD`. Os dois valores precisam ser idênticos.
+
+> ℹ️ `MEU_USUARIO` e `MINHA_SENHA` são obrigatórios. Se ficarem vazios, a aplicação se recusa a subir e exibe a mensagem no log, em vez de quebrar depois na primeira requisição.
 
 **3. Suba os containers**
 
@@ -119,6 +128,8 @@ Em outro terminal, na mesma pasta:
 ```bash
 docker compose exec app python create_table.py
 ```
+
+> ⚠️ O script usa `Base.metadata.create_all()`, que **apenas cria tabelas inexistentes**. Ele não altera tabelas já criadas. Se você mudar o modelo depois (adicionar coluna, constraint etc.), rode `docker compose down -v` para recriar o banco do zero, ou adote uma ferramenta de migração como o Alembic.
 
 Pronto. A API está em `http://localhost:8000`.
 
@@ -158,6 +169,8 @@ O código é montado via bind mount e o uvicorn roda com `--reload`: alteraçõe
 
 A API utiliza **HTTP Basic Authentication**, com as credenciais carregadas de variáveis de ambiente (nada fixo no código) e comparação via `secrets.compare_digest`, que protege contra ataques de temporização.
 
+As variáveis são validadas na inicialização do módulo: se `MEU_USUARIO` ou `MINHA_SENHA` estiverem ausentes ou vazias, a aplicação levanta `RuntimeError` e não sobe.
+
 > ℹ️ HTTP Basic transmite as credenciais codificadas em Base64, o que **não** é criptografia. É adequado para fins didáticos; em produção seria necessário HTTPS e, preferencialmente, JWT ou OAuth2.
 
 ---
@@ -177,7 +190,9 @@ gerenciador-de-livros-em-python/
 ├── .dockerignore        # Arquivos excluídos do contexto de build
 ├── pyproject.toml       # Configuração do projeto e dependências (Poetry)
 ├── poetry.lock          # Lock file das dependências
-├── .env                 # Variáveis de ambiente (não versionado)
+├── .env.example         # Modelo das variáveis de ambiente (versionado)
+├── .env                 # Variáveis de ambiente reais (não versionado)
+├── .gitignore
 └── README.md
 ```
 
@@ -212,12 +227,36 @@ Content-Type: application/json
 }
 ```
 
+O campo `nome` tem constraint `UNIQUE` no banco: tentar cadastrar um título repetido retorna `409`.
+
 ### Listar livros (com paginação)
 
 ```http
 GET /ler?page=1&limit=10
 Authorization: Basic <usuario_e_senha_em_base64>
 ```
+
+Resposta:
+
+```json
+{
+  "page": 1,
+  "limit": 10,
+  "total": 1,
+  "total_pages": 1,
+  "livros": [
+    {
+      "id": 1,
+      "nome": "O Senhor dos Anéis",
+      "autor": "J.R.R. Tolkien",
+      "ano": 1954,
+      "sinopse": "A jornada de Frodo para destruir o Um Anel."
+    }
+  ]
+}
+```
+
+Catálogo vazio ou página além do total retornam `200` com `livros: []`, não `404`.
 
 ### Atualizar um livro
 
@@ -230,6 +269,8 @@ Content-Type: application/json
   "sinopse": "Uma épica aventura pela Terra Média."
 }
 ```
+
+Todos os campos são opcionais: envie apenas os que quiser alterar.
 
 ### Deletar um livro
 
@@ -244,16 +285,16 @@ Authorization: Basic <usuario_e_senha_em_base64>
 
 ### Livro (criação)
 
-| Campo   | Tipo     | Obrigatório | Descrição         |
-| ------- | -------- | ----------- | ----------------- |
-| nome    | `string` | ✅          | Título do livro   |
-| autor   | `string` | ✅          | Nome do autor     |
-| ano     | `int`    | ✅          | Ano de publicação |
-| sinopse | `string` | ❌          | Resumo do livro   |
+| Campo   | Tipo     | Obrigatório | Restrições           | Descrição         |
+| ------- | -------- | ----------- | -------------------- | ----------------- |
+| nome    | `string` | ✅          | 1 a 300, **único**   | Título do livro   |
+| autor   | `string` | ✅          | 1 a 200              | Nome do autor     |
+| ano     | `int`    | ✅          | 1000 até o ano atual | Ano de publicação |
+| sinopse | `string` | ❌          | até 1000             | Resumo do livro   |
 
 ### UpdateLivro (atualização parcial)
 
-Todos os campos são opcionais, permitindo atualizações parciais (PATCH-like via PUT).
+Todos os campos acima ficam opcionais, permitindo atualizações parciais (PATCH-like via PUT). Campos omitidos no corpo não são alterados.
 
 ### Códigos de resposta
 
@@ -262,8 +303,9 @@ Todos os campos são opcionais, permitindo atualizações parciais (PATCH-like v
 | `200`  | Requisição bem-sucedida           |
 | `201`  | Livro criado                      |
 | `204`  | Livro removido (sem conteúdo)     |
+| `400`  | Parâmetros de paginação inválidos |
 | `401`  | Credenciais ausentes ou inválidas |
-| `404`  | Livro não encontrado              |
+| `404`  | Livro não encontrado (PUT/DELETE) |
 | `409`  | Já existe um livro com esse nome  |
 | `422`  | Corpo da requisição inválido      |
 
@@ -278,8 +320,10 @@ Projeto desenvolvido como exercício prático do curso **Full Stack Python** da 
 - Criação de APIs REST com FastAPI
 - Métodos HTTP: `GET`, `POST`, `PUT`, `DELETE`
 - Modelagem de dados e persistência com **SQLAlchemy ORM** + **PostgreSQL**
+- Constraints de integridade no banco (`UNIQUE`) e tratamento de `IntegrityError`
 - Validação de dados com **Pydantic** e `Field` constraints
 - Autenticação com **HTTP Basic Auth** e `compare_digest`
+- Validação de configuração na inicialização (fail-fast em variáveis de ambiente ausentes)
 - Tratamento de erros com `HTTPException`
 - Injeção de dependências com `Depends`
 - Paginação de resultados
