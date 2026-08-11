@@ -25,7 +25,7 @@ def health_check():
 
 #Livro: ID, Nome, Autor, Ano
 @app.post("/adicionar", status_code=201, response_model=SchemaLivroResponse)
-def create_livro( livro: SchemaLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
+async def create_livro( livro: SchemaLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
     
     conflict = db.execute(select(Livro).filter(Livro.nome == livro.nome)).scalars().first()
     if conflict:
@@ -44,7 +44,7 @@ def create_livro( livro: SchemaLivro, credentials: HTTPBasicCredentials = Depend
     return new_livro
 
 @app.get("/ler", status_code=200, response_model=SchemaLivrosOrdenacaoResponse)
-def read_livros(page: int= 1, limit: int= 10, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
+async def read_livros(page: int= 1, limit: int= 10, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
     if page < 1 or limit < 1:
         raise HTTPException(status_code=400, detail="Pagina ou Limite estão inválidos!")
     
@@ -62,8 +62,8 @@ def read_livros(page: int= 1, limit: int= 10, credentials: HTTPBasicCredentials 
         "livros": [{"id": i.id, "nome": i.nome, "autor": i.autor, "ano": i.ano, "sinopse": i.sinopse} for i in livros]
     }
 
-@app.put("/atualizar/{id}", status_code=200,response_model=SchemaUpdateLivroResponse)
-def update_livro(id: int, update_livro: SchemaUpdateLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
+@app.patch("/atualizar/{id}", status_code=200,response_model=SchemaUpdateLivroResponse)
+async def update_livro(id: int, update_livro: SchemaUpdateLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
     
     livro = db.execute(select(Livro).filter(Livro.id == id)).scalars().first()
     
@@ -85,7 +85,7 @@ def update_livro(id: int, update_livro: SchemaUpdateLivro, credentials: HTTPBasi
     return livro
 
 @app.delete("/deletar/{id}", status_code=204)
-def delete_livro(id: int, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
+async def delete_livro(id: int, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
     livro = db.execute(select(Livro).filter(Livro.id == id)).scalars().first()
     
     if not livro:
