@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import HTTPBasicCredentials
 
@@ -23,7 +25,33 @@ app = FastAPI(
 def health_check():
     return {"message":"OK"}
 
-#Livro: ID, Nome, Autor, Ano
+async def chamada_externa1():
+    await asyncio.sleep(2)
+    return "Resultado chamada externa 1: OK"
+
+async def chamada_externa2():
+    await asyncio.sleep(2)
+    return "Resultado chamada externa 2: OK"
+
+async def chamada_externa3():
+    await asyncio.sleep(2)
+    return "Resultado chamada externa 3: OK"
+
+@app.get("/chamadas-externas")
+async def chamadas_externas():
+    tarefa1 = asyncio.create_task(chamada_externa1())
+    tarefa2 = asyncio.create_task(chamada_externa2())
+    tarefa3 = asyncio.create_task(chamada_externa3())
+    
+    resultado1 = await tarefa1
+    resultado2 = await tarefa2
+    resultado3 = await tarefa3
+    
+    return {
+        "message":"Todas as chamadas nas API's foram concluídas com sucesso.",
+        "resultado": [resultado1, resultado2, resultado3]
+    }
+
 @app.post("/adicionar", status_code=201, response_model=SchemaLivroResponse)
 async def create_livro( livro: SchemaLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
     
