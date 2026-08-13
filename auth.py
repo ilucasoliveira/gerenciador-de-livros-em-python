@@ -1,4 +1,6 @@
 import os
+import redis
+import json
 from dotenv import load_dotenv
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
