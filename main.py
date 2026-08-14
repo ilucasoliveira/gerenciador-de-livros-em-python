@@ -55,7 +55,7 @@ async def chamadas_externas():
     }
 
 @app.get("/debug/redis")
-def ver_livros_redis():
+def ver_livros_redis(credentials: HTTPBasicCredentials = Depends(user_authenticate)):
     chaves = redis_client.keys("livro:*")
     livros = []
     
