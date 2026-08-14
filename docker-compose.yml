@@ -17,6 +17,11 @@ services:
       timeout: 5s # se travar mais que isso, conta como falha
       retries: 10 # 10 falhas seguidas = marca como unhealthy
 
+  redis:
+    image: redis:8-alpine
+    container_name: livros-cache
+    restart: unless-stopped
+
   app:
     build: .
     container_name: livros-api
@@ -30,6 +35,8 @@ services:
     depends_on: # segura o app até o db estar pronto de verdade. É a peça queusa o healthcheck.
       db:
         condition: service_healthy # usa essa informação para segurar a partida
+      redis:
+        condition: service_started
     command:
       ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 

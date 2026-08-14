@@ -1,11 +1,11 @@
 import asyncio
-import redis
 import json
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import HTTPBasicCredentials
 
 from auth import user_authenticate
+from cache import redis_client, salvar_livro_redis, delete_livro_redis
 from models import Livro
 from schemas import SchemaLivro, SchemaLivroResponse, SchemaLivrosOrdenacaoResponse, SchemaUpdateLivro ,SchemaUpdateLivroResponse
 from database import get_db
@@ -54,6 +54,17 @@ async def chamadas_externas():
         "resultado": [resultado1, resultado2, resultado3]
     }
 
+@app.get("/debug/redis")
+def ver_livros_redis():
+    chaves = redis_client.keys("livro:*")
+    livros = []
+    
+    for chave in chaves:
+        valor = redis_client.get(chave)
+        livros.append({"chave": chave, "valor": json.loads(valor)})
+    
+    return livros
+
 @app.post("/adicionar", status_code=201, response_model=SchemaLivroResponse)
 async def create_livro( livro: SchemaLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
     
@@ -67,6 +78,9 @@ async def create_livro( livro: SchemaLivro, credentials: HTTPBasicCredentials = 
         db.add(new_livro)
         db.commit()
         db.refresh(new_livro)
+        
+        salvar_livro_redis(new_livro.id, livro)
+        
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Não foi possível adicionar esse livro. Tente Novamente!")
@@ -123,3 +137,5 @@ async def delete_livro(id: int, credentials: HTTPBasicCredentials = Depends(user
     
     db.delete(livro)
     db.commit()
+    
+    delete_livro_redis(livro.id)
