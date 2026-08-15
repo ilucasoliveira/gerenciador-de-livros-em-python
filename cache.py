@@ -19,7 +19,12 @@ redis_client = redis.Redis(
 )
 
 def salvar_livro_redis(id: int, livro: SchemaLivro):
-    redis_client.set(f"livro:{id}", json.dumps(livro.model_dump()))
+    redis_client.setex(f"livro:{id}", 30, json.dumps(livro.model_dump()))
 
 def delete_livro_redis(id: int):
     redis_client.delete(f"livro:{id}")
+
+def invalidar_listagens():
+    chaves = redis_client.keys("livros:*")
+    if chaves:
+        redis_client.delete(*chaves)
