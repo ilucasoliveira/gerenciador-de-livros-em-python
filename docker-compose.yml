@@ -21,6 +21,28 @@ services:
     image: redis:8-alpine
     container_name: livros-cache
     restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  celery:
+    build: .
+    container_name: livros-celery
+    command:
+      [
+        "poetry",
+        "run",
+        "celery",
+        "-A",
+        "celery_app:celery_app",
+        "worker",
+        "-Q",
+        "livros",
+        "--loglevel=info",
+      ]
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
 
   app:
     build: .

@@ -1,15 +1,18 @@
 import asyncio
 import json
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from fastapi.security import HTTPBasicCredentials
 
 from auth import user_authenticate
+from tasks import fatorial, somar
 from cache import redis_client, salvar_livro_redis, delete_livro_redis, invalidar_listagens
 from models import Livro
 from schemas import SchemaLivro, SchemaLivroResponse, SchemaLivrosOrdenacaoResponse, SchemaUpdateLivro ,SchemaUpdateLivroResponse
 from database import get_db
+from celery_app import celery_app
 from sqlalchemy import select, func
+from celery.result import AsyncResult
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -27,33 +30,21 @@ app = FastAPI(
 def health_check():
     return {"message":"OK"}
 
-async def chamada_externa1():
-    await asyncio.sleep(2)
-    return "Resultado chamada externa 1: OK"
-
-async def chamada_externa2():
-    await asyncio.sleep(2)
-    return "Resultado chamada externa 2: OK"
-
-async def chamada_externa3():
-    await asyncio.sleep(2)
-    return "Resultado chamada externa 3: OK"
-
-@app.get("/chamadas-externas")
-async def chamadas_externas():
-    tarefa1 = asyncio.create_task(chamada_externa1())
-    tarefa2 = asyncio.create_task(chamada_externa2())
-    tarefa3 = asyncio.create_task(chamada_externa3())
-    
-    resultado1 = await tarefa1
-    resultado2 = await tarefa2
-    resultado3 = await tarefa3
-    
+@app.post("/calcular/soma")
+def calcular_soma(a: int, b: int):
+    tarefa = somar.delay(a,b)
     return {
-        "message":"Todas as chamadas nas API's foram concluídas com sucesso.",
-        "resultado": [resultado1, resultado2, resultado3]
-    }
+        "task_id": tarefa.id,
+        "message":"Tarefa de soma enviada para execução!"
+        }
 
+@app.post("/calcular/fatorial")
+def calcular_fatorial(n: int):
+    tarefa = fatorial.delay(n)
+    return {
+        "task_id": tarefa.id,
+        "message":"Tarefa de fatorial enviada para execução!"
+        }
 
 @app.post("/adicionar", status_code=201, response_model=SchemaLivroResponse)
 async def create_livro( livro: SchemaLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: Session=Depends(get_db)):
