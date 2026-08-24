@@ -41,20 +41,46 @@ def health_check():
     return {"message":"OK"}
 
 @app.post("/calcular/soma")
-def calcular_soma(a: int, b: int):
+async def calcular_soma(a: int, b: int):
     tarefa = somar.delay(a,b)
+    await redis_client.lpush("tarefas_ids", tarefa.id)
+    await redis_client.ltrim("tarefas_ids", 0, 49)
     return {
         "task_id": tarefa.id,
         "message":"Tarefa de soma enviada para execução!"
         }
 
 @app.post("/calcular/fatorial")
-def calcular_fatorial(n: int):
+async def calcular_fatorial(n: int):
     tarefa = fatorial.delay(n)
+    await redis_client.lpush("tarefas_ids", tarefa.id)
+    await redis_client.ltrim("tarefas_ids", 0, 49)
     return {
         "task_id": tarefa.id,
         "message":"Tarefa de fatorial enviada para execução!"
         }
+
+@app.get("/tarefas/recentes")
+async def listar_tarefas_recentes():
+    ids = await redis_client.lrange("tarefas_ids", 0, -1)
+    tarefas = []
+    
+    for task_id in ids:
+        resultado = AsyncResult(task_id, app=celery_app)
+        resultado_status = resultado.status
+        tarefas.append({
+            "task_id": task_id,
+            "status": resultado_status,
+            "resultado": resultado.result if resultado_status == "SUCCESS" else None
+        })
+    
+    return {
+        "tarefas": tarefas
+    }
+
+@app.get("tarefas/executar")
+async def executar_tarefa():
+    print()
 
 @app.post("/adicionar", status_code=201, response_model=SchemaLivroResponse)
 async def create_livro( livro: SchemaLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: AsyncSession = Depends(get_db)):

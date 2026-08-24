@@ -1,9 +1,16 @@
+import os
+from dotenv import load_dotenv
+from app.cache import REDIS_HOST, REDIS_PORT
 from celery import Celery
+
+load_dotenv()
+
+REDIS_URL = os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/0")
 
 celery_app = Celery(
     "tarefas_livros",
-    broker="redis://redis:6379/0",
-    backend="redis://redis:6379/0",
+    broker=REDIS_URL,
+    backend=REDIS_URL,
     include=["app.tasks"]
 )
 
