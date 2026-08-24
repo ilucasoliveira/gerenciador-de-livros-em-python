@@ -27,22 +27,23 @@ services:
   celery:
     build: .
     container_name: livros-celery
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
     command:
       [
-        "poetry",
-        "run",
         "celery",
         "-A",
-        "celery_app:celery_app",
+        "app.celery_app:celery_app",
         "worker",
         "-Q",
         "livros",
         "--loglevel=info",
       ]
-    volumes:
-      - .:/app
-    depends_on:
-      - redis
 
   app:
     build: .
@@ -60,7 +61,15 @@ services:
       redis:
         condition: service_started
     command:
-      ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+      ]
 
 volumes:
   pgdata:

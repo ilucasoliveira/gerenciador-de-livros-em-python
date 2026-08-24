@@ -1,8 +1,8 @@
 import os
-import redis
+import redis.asyncio as redis
 import json
 from dotenv import load_dotenv
-from schemas import SchemaLivro
+from app.schemas import SchemaLivro
 
 load_dotenv()
 
@@ -18,13 +18,13 @@ redis_client = redis.Redis(
     socket_timeout=2 # no máximo 2 segundos esperando resposta de um comando já conectado.
 )
 
-def salvar_livro_redis(id: int, livro: SchemaLivro):
-    redis_client.setex(f"livro:{id}", 30, json.dumps(livro.model_dump()))
+async def salvar_livro_redis(id: int, livro: SchemaLivro):
+    await redis_client.setex(f"livro:{id}", 30, json.dumps(livro.model_dump()))
 
-def delete_livro_redis(id: int):
-    redis_client.delete(f"livro:{id}")
+async def delete_livro_redis(id: int):
+    await redis_client.delete(f"livro:{id}")
 
-def invalidar_listagens():
-    chaves = redis_client.keys("livros:*")
+async def invalidar_listagens():
+    chaves = await redis_client.keys("livros:*")
     if chaves:
-        redis_client.delete(*chaves)
+        await redis_client.delete(*chaves)
