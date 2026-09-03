@@ -45,6 +45,45 @@ services:
         "--loglevel=info",
       ]
 
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.9.0
+    container_name: livros-zookeeper
+    restart: unless-stopped
+    ports:
+      - "2181:2181"
+    environment:
+      - ZOOKEEPER_CLIENT_PORT=2181
+      - ZOOKEEPER_TICK_TIME=2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.9.0
+    container_name: livros-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: livros-kafka-ui
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAP_SERVERS=kafka:29092
+
   app:
     build: .
     container_name: livros-api
@@ -55,10 +94,14 @@ services:
       - .:/app # ".": pasta NO MEU WINDOWS (ONDE ESTÁ O DOCKER); "/app": pasta DENTRO do container
     env_file:
       - .env
+    environment:
+      - KAFKA_SERVER=kafka:29092
     depends_on: # segura o app até o db estar pronto de verdade. É a peça queusa o healthcheck.
       db:
         condition: service_healthy # usa essa informação para segurar a partida
       redis:
+        condition: service_started
+      kafka:
         condition: service_started
     command:
       [

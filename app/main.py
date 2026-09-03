@@ -16,6 +16,7 @@ from app.cache import (
 )
 from app.celery_app import celery_app
 from app.database import get_db
+from app.kafka_producer import enviar_evento
 from app.models import Livro
 from app.schemas import (
     SchemaLivro,
@@ -78,10 +79,6 @@ async def listar_tarefas_recentes():
         "tarefas": tarefas
     }
 
-@app.get("tarefas/executar")
-async def executar_tarefa():
-    print()
-
 @app.post("/adicionar", status_code=201, response_model=SchemaLivroResponse)
 async def create_livro( livro: SchemaLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: AsyncSession = Depends(get_db)):
     
@@ -93,6 +90,11 @@ async def create_livro( livro: SchemaLivro, credentials: HTTPBasicCredentials = 
         await db.refresh(new_livro)
         
         await salvar_livro_redis(new_livro.id, livro)
+        
+        enviar_evento("livros_eventos", {
+            "acao":"criar",
+            "livro": livro.model_dump()
+        })
         
         await invalidar_listagens()
         
