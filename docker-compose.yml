@@ -12,7 +12,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql # "pgdata": nome poderia ser outro; "var/lib/postgresql": pasta dentro do container onde o Postgres grava os dados. (imagem oficial - Docker Hub)
     healthcheck: # É um teste que o Docker roda repetidamente para saber se o container está realmente funcionando, não só ligado.
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s # roda a cada 5s
       timeout: 5s # se travar mais que isso, conta como falha
       retries: 10 # 10 falhas seguidas = marca como unhealthy

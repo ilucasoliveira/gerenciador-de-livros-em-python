@@ -25,3 +25,7 @@ requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 [tool.pytest.init_options]
 pythonpath = ["."]
+[dependency-groups]
+dev = [
+    "pytest-mock (>=3.15.1,<4.0.0)"
+]
