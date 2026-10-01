@@ -8,8 +8,8 @@ from app.main import app
 
 load_dotenv()
 
-os.environ=["MEU_USUARIO"] = "admin"
-os.environ=["MINHA_SENHA"] = "admin"
+os.environ["MEU_USUARIO"] = "admin"
+os.environ["MINHA_SENHA"] = "admin"
 
 client = TestClient(app)
 
