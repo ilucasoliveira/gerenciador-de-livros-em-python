@@ -1,37 +1,66 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+# Pipeline de CI (Integração Contínua) do Gerenciador de Livros.
+# Toda vez que alguém der push na main, o GitHub sobe uma máquina Linux,
+# instala Python + Poetry + dependências e roda a suíte de testes com pytest.
+# Se QUALQUER teste falhar, o job fica vermelho e o problema aparece na aba "Actions".
 
-name: Python application
+name: CI - Testes com Poetry   # nome que aparece na aba "Actions" do GitHub
 
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+on:                  # "on" = quais eventos disparam este workflow
+  push:              # dispara a cada push...
+    branches: [ "main" ]   # ...mas só quando o push for na branch main
 
 permissions:
-  contents: read
+  contents: read     # o workflow só precisa LER o código; menor permissão possível
 
-jobs:
-  build:
+jobs:                # um workflow é feito de um ou mais jobs
+  test:              # nome (id) do job
+    runs-on: ubuntu-latest   # máquina virtual (runner) onde o job roda: Ubuntu, versão mais recente
 
-    runs-on: ubuntu-latest
+    # "services" sobe containers auxiliares junto com o job.
+    # O teste test_database.py precisa de um PostgreSQL de verdade, então subimos um aqui.
+    services:
+      postgres:
+        image: postgres:16               # imagem oficial do PostgreSQL
+        env:
+          POSTGRES_USER: postgres        # usuário criado dentro do container
+          POSTGRES_PASSWORD: postgres    # senha (é um banco descartável, só existe durante o job)
+          POSTGRES_DB: livros_test       # banco criado automaticamente na inicialização
+        ports:
+          - 5432:5432                    # porta do runner : porta do container -> acessível via localhost:5432
+        options: >-                      # healthcheck: o job só segue quando o Postgres aceitar conexões
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
-    steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v3
-      with:
-        python-version: "3.10"
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install flake8 pytest python-dotenv
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    - name: Lint with flake8
-      run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    
+    # Variáveis de ambiente disponíveis para TODOS os steps deste job.
+    # Substituem o arquivo .env, que não vai para o GitHub (está no .gitignore).
+    env:
+      MEU_USUARIO: admin                 # credenciais do HTTP Basic usadas pelo app/auth.py
+      MINHA_SENHA: admin
+      # URL assíncrona (asyncpg) que o app/database.py usa
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/livros_test
+      # URL síncrona (psycopg2) que o tests/test_database.py usa para preparar os dados
+      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/livros_test
+
+    steps:           # passos executados em sequência, de cima para baixo
+      - name: Checkout do código
+        uses: actions/checkout@v3        # baixa o conteúdo do repositório para dentro do runner
+
+      - name: Instalar Python 3.14
+        uses: actions/setup-python@v5    # ação oficial que instala a versão pedida do Python
+        with:
+          python-version: "3.14"         # o pyproject.toml exige requires-python >= 3.14
+
+      - name: Instalar Poetry
+        run: pip install poetry          # "run" executa um comando de shell no runner
+
+      - name: Instalar dependências
+        # --no-root: instala só as dependências, sem instalar o próprio projeto como pacote
+        # --no-interaction: nunca para esperando resposta do teclado (no CI não tem ninguém para responder)
+        run: poetry install --no-root --no-interaction
+
+      - name: Rodar testes
+        # O pytest retorna código de saída diferente de 0 quando algum teste falha.
+        # Qualquer step que termina com código != 0 faz o job falhar automaticamente.
+        run: poetry run pytest
