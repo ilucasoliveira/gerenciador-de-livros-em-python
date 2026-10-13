@@ -1,9 +1,11 @@
 # Pipeline de CI (Integração Contínua) do Gerenciador de Livros.
 # Toda vez que alguém der push na main, o GitHub sobe uma máquina Linux,
 # instala Python + Poetry + dependências e roda a suíte de testes com pytest.
-# Se QUALQUER teste falhar, o job fica vermelho e o problema aparece na aba "Actions".
+# Depois dos testes, constrói a imagem Docker da aplicação e sobe um container
+# dela para conferir se a API realmente inicia e responde.
+# Se QUALQUER etapa falhar, o job fica vermelho e o problema aparece na aba "Actions".
 
-name: CI - Testes com Poetry   # nome que aparece na aba "Actions" do GitHub
+name: CI - Testes e Build Docker   # nome que aparece na aba "Actions" do GitHub
 
 on:                  # "on" = quais eventos disparam este workflow
   push:              # dispara a cada push...
@@ -11,6 +13,13 @@ on:                  # "on" = quais eventos disparam este workflow
 
 permissions:
   contents: read     # o workflow só precisa LER o código; menor permissão possível
+
+# Variáveis de ambiente do WORKFLOW inteiro (valem para todos os jobs e steps).
+# Centralizam o nome da imagem: para trocar o nome ou a tag, muda só aqui.
+env:
+  IMAGE_NAME: fastapi-app            # nome da imagem Docker
+  IMAGE_TAG: latest                  # tag (versão) da imagem
+  CONTAINER_NAME: fastapi-app-ci     # nome do container de validação (usado para ler logs e remover no fim)
 
 jobs:                # um workflow é feito de um ou mais jobs
   test:              # nome (id) do job
@@ -64,3 +73,60 @@ jobs:                # um workflow é feito de um ou mais jobs
         # O pytest retorna código de saída diferente de 0 quando algum teste falha.
         # Qualquer step que termina com código != 0 faz o job falhar automaticamente.
         run: poetry run pytest
+
+      # ---------------------------------------------------------------------
+      # A partir daqui: build e validação da imagem Docker.
+      # Como os steps rodam em sequência, estes só executam se os testes passarem.
+      # O Docker já vem instalado no runner ubuntu-latest, não é preciso instalar nada.
+      # ---------------------------------------------------------------------
+
+      - name: Build da imagem Docker
+        # -t  : dá nome:tag para a imagem (fastapi-app:latest)
+        # -f  : caminho do Dockerfile usado no build
+        # .   : contexto do build = raiz do repositório (o que o COPY do Dockerfile enxerga)
+        # Se o build quebrar, o docker devolve código != 0 e o job falha.
+        run: docker build -t "$IMAGE_NAME:$IMAGE_TAG" -f Dockerfile .
+
+      - name: Subir container da imagem
+        # -d             : roda em segundo plano (detached), senão o step ficaria preso no uvicorn
+        # --name         : nome fixo para conseguir ler os logs e remover o container depois
+        # --network host : o container usa a rede do runner, então "localhost:8000" do runner
+        #                  chega na API, e "localhost:5432" de dentro do container chega no Postgres do job
+        # -e VAR         : repassa para o container a variável de mesmo nome que já existe no job.
+        #                  O app/auth.py derruba a aplicação se MEU_USUARIO ou MINHA_SENHA faltarem.
+        run: |
+          docker run -d \
+            --name "$CONTAINER_NAME" \
+            --network host \
+            -e MEU_USUARIO \
+            -e MINHA_SENHA \
+            -e DATABASE_URL \
+            "$IMAGE_NAME:$IMAGE_TAG"
+
+      - name: Validar que a API respondeu
+        # O uvicorn leva alguns segundos para subir. Tenta o health check (GET /) até 15 vezes,
+        # com 2s de intervalo. "curl --fail" devolve erro se o status HTTP for 4xx/5xx.
+        # Se o container morrer ou nunca responder, mostra os logs e encerra com exit 1 (job falha).
+        run: |
+          for tentativa in $(seq 1 15); do
+            if curl --silent --fail http://localhost:8000/; then
+              echo ""
+              echo "API respondeu na tentativa $tentativa"
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME")" != "true" ]; then
+              echo "O container parou antes de responder."
+              break
+            fi
+            sleep 2
+          done
+          echo "A API não respondeu. Logs do container:"
+          docker logs "$CONTAINER_NAME"
+          exit 1
+
+      - name: Remover container de validação
+        # if: always() faz este step rodar mesmo quando um step anterior falhou.
+        # O "|| true" aqui é só na limpeza: se o container nem chegou a existir, não há o que remover.
+        # Isso não esconde erro do build nem do run, porque eles já foram avaliados nos steps acima.
+        if: always()
+        run: docker rm -f "$CONTAINER_NAME" || true
