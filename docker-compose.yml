@@ -84,6 +84,41 @@ services:
       - KAFKA_CLUSTERS_0_NAME=local
       - KAFKA_CLUSTERS_0_BOOTSTRAP_SERVERS=kafka:29092
 
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - bootstrap.memory_lock=true
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - esdata:usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: logstash
+    depends_on:
+      - elasticsearch
+    volumes:
+      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS="http://elasticsearch:9200"
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+
   app:
     build: .
     container_name: livros-api
@@ -91,7 +126,8 @@ services:
     ports:
       - "8000:8000" # "direita": porque é o que esta no command(aqui/Dockerfile); "esquerda": é porque estava livre no meu Windows, poderia ser qualquer outro.
     volumes:
-      - .:/app # ".": pasta NO MEU WINDOWS (ONDE ESTÁ O DOCKER); "/app": pasta DENTRO do container
+      - .:/app
+      - ./logs:/logs
     env_file:
       - .env
     environment:
@@ -116,3 +152,4 @@ services:
 
 volumes:
   pgdata:
+  esdata:

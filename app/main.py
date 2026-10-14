@@ -1,6 +1,10 @@
 import json
+import logging.config
+import yaml
+
 
 from celery.result import AsyncResult
+from elasticsearch import Elasticsearch
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.security import HTTPBasicCredentials
 from sqlalchemy import func, select
@@ -27,29 +31,40 @@ from app.schemas import (
 )
 from app.tasks import fatorial, somar
 
+es = Elasticsearch(hosts="http://elasticsearch:9200")
+with open("logging.yaml", "r") as f:
+    config = yaml.safe_load(f.read())
+    logging.config.dictConfig(config)
+
+logger = logging.getLogger()
+logging.info("API Inicializada com sucesso")
+
 app = FastAPI(
     title="Gerenciador de Livros API",
     description="Esse gerenciador foi criado no intuito de aprender como utilizar API e seus métodos, funções e funcionabilidades.",
     version="1.0.0",
-    contact={
-        "name":"Lucas de Oliveira",
-        "email":"lucasdeoliveira937@gmail.com"
-    }
+    contact={"name": "Lucas de Oliveira", "email": "lucasdeoliveira937@gmail.com"},
 )
 
+
 @app.get("/")
+def hello_world():
+    logger.info("Alguém acessou a raiz da API.")
+    return {"message": "Hello World"}
+
+
+@app.get("/health", tags=["health"])
 def health_check():
-    return {"message":"OK"}
+    return {"status": "OK"}
+
 
 @app.post("/calcular/soma")
 async def calcular_soma(a: int, b: int):
-    tarefa = somar.delay(a,b)
+    tarefa = somar.delay(a, b)
     await redis_client.lpush("tarefas_ids", tarefa.id)
     await redis_client.ltrim("tarefas_ids", 0, 49)
-    return {
-        "task_id": tarefa.id,
-        "message":"Tarefa de soma enviada para execução!"
-        }
+    return {"task_id": tarefa.id, "message": "Tarefa de soma enviada para execução!"}
+
 
 @app.post("/calcular/fatorial")
 async def calcular_fatorial(n: int):
@@ -58,137 +73,168 @@ async def calcular_fatorial(n: int):
     await redis_client.ltrim("tarefas_ids", 0, 49)
     return {
         "task_id": tarefa.id,
-        "message":"Tarefa de fatorial enviada para execução!"
-        }
+        "message": "Tarefa de fatorial enviada para execução!",
+    }
+
 
 @app.get("/tarefas/recentes")
 async def listar_tarefas_recentes():
     ids = await redis_client.lrange("tarefas_ids", 0, -1)
     tarefas = []
-    
+
     for task_id in ids:
         resultado = AsyncResult(task_id, app=celery_app)
         resultado_status = resultado.status
-        tarefas.append({
-            "task_id": task_id,
-            "status": resultado_status,
-            "resultado": resultado.result if resultado_status == "SUCCESS" else None
-        })
-    
-    return {
-        "tarefas": tarefas
-    }
+        tarefas.append(
+            {
+                "task_id": task_id,
+                "status": resultado_status,
+                "resultado": (
+                    resultado.result if resultado_status == "SUCCESS" else None
+                ),
+            }
+        )
+
+    return {"tarefas": tarefas}
+
 
 @app.post("/adicionar", status_code=201, response_model=SchemaLivroResponse)
-async def create_livro( livro: SchemaLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: AsyncSession = Depends(get_db)):
-    
+async def create_livro(
+    livro: SchemaLivro,
+    credentials: HTTPBasicCredentials = Depends(user_authenticate),
+    db: AsyncSession = Depends(get_db),
+):
+
     new_livro = Livro(**livro.model_dump())
-    
+
     try:
         db.add(new_livro)
         await db.commit()
         await db.refresh(new_livro)
-        
+
         await salvar_livro_redis(new_livro.id, livro)
-        
-        enviar_evento("livros_eventos", {
-            "acao":"criar",
-            "livro": livro.model_dump()
-        })
-        
+
+        enviar_evento("livros_eventos", {"acao": "criar", "livro": livro.model_dump()})
+
         await invalidar_listagens()
-        
+
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Livro já adicionado a biblioteca!")
-    
+
     return new_livro
 
+
 @app.get("/debug/redis")
-async def ver_livros_redis(credentials: HTTPBasicCredentials = Depends(user_authenticate)):
+async def ver_livros_redis(
+    credentials: HTTPBasicCredentials = Depends(user_authenticate),
+):
     chaves = await redis_client.keys("livro:*")
     livros = []
-    
+
     for chave in chaves:
         valor = await redis_client.get(chave)
-        
-        if valor is None: 
+
+        if valor is None:
             continue
-        
+
         ttl = await redis_client.ttl(chave)
-        
+
         livros.append({"chave": chave, "valor": json.loads(valor), "ttl": ttl})
-    
+
     return livros
 
+
 @app.get("/ler", status_code=200, response_model=SchemaLivrosOrdenacaoResponse)
-async def read_livros(page: int= 1, limit: int= 10, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: AsyncSession = Depends(get_db)):
-    
+async def read_livros(
+    page: int = 1,
+    limit: int = 10,
+    credentials: HTTPBasicCredentials = Depends(user_authenticate),
+    db: AsyncSession = Depends(get_db),
+):
+
     if page < 1 or limit < 1:
         raise HTTPException(status_code=400, detail="Page or limit estão inválidos!")
-    
+
     cache_key = f"livros:page={page}&limit={limit}"
     cached = await redis_client.get(cache_key)
-    
+
     if cached:
         return json.loads(cached)
-    
+
     livros = await db.execute(select(Livro).offset((page - 1) * limit).limit(limit))
     livros_resultados = livros.scalars().all()
-    
+
     total = await db.execute(select(func.count(Livro.id)))
     resultado_total = total.scalar()
-    
-    total_pages = (resultado_total + limit - 1) // limit
-    
-    resposta = SchemaLivrosOrdenacaoResponse.model_validate({ # cria o schema a partir do dicionário. O campo livros chega como lista de objetos Livro do SQLAlchemy, e o Pydantic consegue lê-los porque SchemaLivroResponse herda o ConfigDict(from_attributes=True) do SchemaLivro.
-        "page": page,
-        "limit": limit,
-        "total": resultado_total,
-        "total_pages": total_pages,
-        "livros": livros_resultados
-    })
-    
-    await redis_client.setex(cache_key, 30, resposta.model_dump_json()) # devolve uma string JSON já pronta. Não precisa mais do json.dumps, e o TypeError desaparece porque quem serializa agora é o Pydantic, não o json.
-    
-    return resposta # devolve o objeto Pydantic. O FastAPI lida com isso normalmente.
 
-@app.patch("/atualizar/{id}", status_code=200,response_model=SchemaUpdateLivroResponse)
-async def update_livro(id: int, update_livro: SchemaUpdateLivro, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: AsyncSession = Depends(get_db)):
-    
+    total_pages = (resultado_total + limit - 1) // limit
+
+    resposta = SchemaLivrosOrdenacaoResponse.model_validate(
+        {  # cria o schema a partir do dicionário. O campo livros chega como lista de objetos Livro do SQLAlchemy, e o Pydantic consegue lê-los porque SchemaLivroResponse herda o ConfigDict(from_attributes=True) do SchemaLivro.
+            "page": page,
+            "limit": limit,
+            "total": resultado_total,
+            "total_pages": total_pages,
+            "livros": livros_resultados,
+        }
+    )
+
+    await redis_client.setex(
+        cache_key, 30, resposta.model_dump_json()
+    )  # devolve uma string JSON já pronta. Não precisa mais do json.dumps, e o TypeError desaparece porque quem serializa agora é o Pydantic, não o json.
+
+    return resposta  # devolve o objeto Pydantic. O FastAPI lida com isso normalmente.
+
+
+@app.patch("/atualizar/{id}", status_code=200, response_model=SchemaUpdateLivroResponse)
+async def update_livro(
+    id: int,
+    update_livro: SchemaUpdateLivro,
+    credentials: HTTPBasicCredentials = Depends(user_authenticate),
+    db: AsyncSession = Depends(get_db),
+):
+
     livro = await db.execute(select(Livro).filter(Livro.id == id))
     livro_resultado = livro.scalars().first()
-    
+
     if not livro_resultado:
         raise HTTPException(status_code=404, detail="Livro não encontrado!")
-    
+
     novo_dado = update_livro.model_dump(exclude_unset=True)
-    
+
     for chave, valor in novo_dado.items():
         setattr(livro_resultado, chave, valor)
-    
+
     try:
         await db.commit()
         await db.refresh(livro_resultado)
         await delete_livro_redis(id)
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Já existe um livro com esse nome. Tente Novamente!")
-    
+        raise HTTPException(
+            status_code=409, detail="Já existe um livro com esse nome. Tente Novamente!"
+        )
+
     await invalidar_listagens()
-    
+
     return livro_resultado
 
+
 @app.delete("/deletar/{id}", status_code=204)
-async def delete_livro(id: int, credentials: HTTPBasicCredentials = Depends(user_authenticate), db: AsyncSession = Depends(get_db)):
+async def delete_livro(
+    id: int,
+    credentials: HTTPBasicCredentials = Depends(user_authenticate),
+    db: AsyncSession = Depends(get_db),
+):
     livro = await db.execute(select(Livro).filter(Livro.id == id))
     livro_resultado = livro.scalars().first()
-    
+
     if not livro_resultado:
         raise HTTPException(status_code=404, detail="Livro não encontrado!")
-    
+
     await db.delete(livro_resultado)
     await db.commit()
-    
+
     await delete_livro_redis(livro_resultado.id)
     await invalidar_listagens()

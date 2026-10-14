@@ -1,0 +1,49 @@
+# ANTES DE APLICAR: criar o Secret com as variáveis do .env (a app não sobe sem MEU_USUARIO e MINHA_SENHA):
+#   kubectl create secret generic livros-env --from-env-file=.env
+# Depois: kubectl apply -f deployment.yaml
+
+apiVersion: apps/v1 # Versão da API do Kubernetes. Deployment fica no grupo "apps".
+kind: Deployment # Tipo do objeto. Deployment = manter X cópias da app sempre rodando.
+metadata:
+  name: fastapi-deployment # Nome do Deployment, usado nos comandos kubectl.
+  labels:
+    app: fastapi # Etiqueta do próprio Deployment. Opcional, só organiza.
+spec:
+  replicas: 2 # Quantos pods iguais manter. Se um morrer, o Kubernetes cria outro no lugar.
+  selector:
+    matchLabels:
+      app: fastapi # Como o Deployment reconhece os pods dele: pela etiqueta app=fastapi.
+  template: # Molde de cada pod que vai ser criado.
+    metadata:
+      labels:
+        app: fastapi # Etiqueta de cada pod. TEM que ser igual ao selector acima, e é por ela que o Service acha os pods.
+    spec:
+      containers:
+        - name: fastapi-container # Nome do container dentro do pod.
+          image: ilucasoliveira/gerenciador-livros:1.0 # Imagem no Docker Hub. O cluster do Docker Desktop não enxerga imagens locais (containerd image store), por isso precisa estar publicada.
+          imagePullPolicy: IfNotPresent # Só baixa a imagem se o node ainda não tiver ela.
+          envFrom:
+            - secretRef:
+                name: livros-env # Carrega todas as chaves do Secret como variáveis de ambiente. Equivale ao env_file: .env do Compose.
+          ports:
+            - containerPort: 8000 # Porta onde o uvicorn escuta dentro do container (mesma do CMD do Dockerfile).
+          resources:
+            requests: # Mínimo garantido. O Kubernetes só coloca o pod num node que tenha isso livre.
+              cpu: "100m" # 10% de um núcleo.
+              memory: "128Mi"
+            limits: # Máximo permitido.
+              cpu: "500m" # Meio núcleo. Se passar disso, o container fica mais lento (throttling), não morre.
+              memory: "256Mi" # Se passar disso, o container é morto (OOMKilled) e reiniciado.
+          readinessProbe: # "Está pronto para receber tráfego?" Se falhar, o Service para de mandar requisições para este pod, mas não mata ele.
+            httpGet:
+              path: /docs # Rota que o FastAPI já cria sozinho. Respondeu 200 = pronto.
+              port: 8000 # Porta do container (mesma do containerPort).
+            initialDelaySeconds: 5 # Espera 5s depois do container subir antes da primeira checagem.
+            periodSeconds: 10 # Repete a checagem a cada 10s.
+          livenessProbe: # "Ainda está vivo?" Se falhar várias vezes seguidas, o Kubernetes mata o container e cria outro.
+            httpGet:
+              path: /docs
+              port: 8000
+            initialDelaySeconds: 15 # Espera mais que a readiness: matar o container cedo demais é pior do que só tirar do tráfego.
+            periodSeconds: 20 # Checa com menos frequência que a readiness.
+            failureThreshold: 3 # Só mata depois de 3 falhas seguidas (padrão do Kubernetes, deixado explícito).

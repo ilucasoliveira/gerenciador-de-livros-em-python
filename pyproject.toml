@@ -16,16 +16,19 @@ dependencies = [
     "celery (>=5.6.3,<6.0.0)",
     "asyncpg (>=0.31.0,<0.32.0)",
     "kafka-python (>=3.0.11,<4.0.0)",
-    "pytest (>=9.1.1,<10.0.0)"
+    "pytest (>=9.1.1,<10.0.0)",
+    "elasticsearch (>=9.5.1,<10.0.0)"
 ]
 
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
-[tool.pytest.init_options]
+[tool.pytest.ini_options]
 pythonpath = ["."]
 [dependency-groups]
 dev = [
-    "pytest-mock (>=3.15.1,<4.0.0)"
+    "pytest-mock (>=3.15.1,<4.0.0)",
+    "pytest (>=9.1.1,<10.0.0)",
+    "httpx (>=0.28.1,<0.29.0)"
 ]

@@ -1,0 +1,17 @@
+# Aplicar: kubectl apply -f service.yaml
+# ClusterIP só é acessível de dentro do cluster. Para testar da sua máquina:
+#   kubectl port-forward service/fastapi-service 8080:80
+# Depois acessar http://localhost:8080/docs (o comando precisa ficar rodando no terminal).
+
+apiVersion: v1 # Service fica no grupo principal (core) da API, por isso só "v1".
+kind: Service # Endereço fixo que distribui o tráfego entre os pods. Pods mudam de IP, o Service não.
+metadata:
+  name: fastapi-service # Nome do Service. Dentro do cluster também vira DNS: http://fastapi-service
+spec:
+  type: ClusterIP # Expõe o Service só dentro do cluster (IP interno). É o tipo padrão do Kubernetes.
+  selector:
+    app: fastapi # Manda o tráfego para os pods com a etiqueta app=fastapi (os criados pelo Deployment).
+  ports:
+    - protocol: TCP # HTTP roda em cima de TCP.
+      port: 80 # Porta do Service, a que quem chama usa.
+      targetPort: 8000 # Porta do container para onde o tráfego é repassado (containerPort do Deployment).
