@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 .venv/
+# Logs gerados em runtime
+logs/*
+!logs/.gitkeep

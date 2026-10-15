@@ -1,0 +1,31 @@
+version: 1
+# false para não desligar os loggers que o uvicorn já configurou antes de importar a app
+disable_existing_loggers: false
+
+formatters:
+  json:
+    (): app.log_formatter.JsonFormatter
+  console:
+    format: "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: console
+    stream: ext://sys.stdout
+  arquivo:
+    class: logging.FileHandler
+    formatter: json
+    filename: logs/app.log
+    encoding: utf-8
+
+loggers:
+  # Log de acesso do uvicorn (ex.: "GET /ler HTTP/1.1" 200) também vai para o arquivo
+  uvicorn.access:
+    level: INFO
+    handlers: [console, arquivo]
+    propagate: false
+
+root:
+  level: INFO
+  handlers: [console, arquivo]

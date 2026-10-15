@@ -1,5 +1,7 @@
 import json
 import logging.config
+from pathlib import Path
+
 import yaml
 
 
@@ -32,12 +34,15 @@ from app.schemas import (
 from app.tasks import fatorial, somar
 
 es = Elasticsearch(hosts="http://elasticsearch:9200")
-with open("logging.yaml", "r") as f:
-    config = yaml.safe_load(f.read())
+BASE_DIR = Path(__file__).resolve().parent.parent
+(BASE_DIR / "logs").mkdir(exist_ok=True)  # o FileHandler não cria a pasta sozinho
+
+with open(BASE_DIR / "logging.yaml", "r", encoding="utf-8") as f:
+    config = yaml.safe_load(f)
     logging.config.dictConfig(config)
 
-logger = logging.getLogger()
-logging.info("API Inicializada com sucesso")
+logger = logging.getLogger(__name__)
+logger.info("API Inicializada com sucesso")
 
 app = FastAPI(
     title="Gerenciador de Livros API",

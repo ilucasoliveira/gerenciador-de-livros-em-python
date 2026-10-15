@@ -97,7 +97,7 @@ services:
         soft: -1
         hard: -1
     volumes:
-      - esdata:usr/share/elasticsearch/data
+      - esdata:/usr/share/elasticsearch/data
     ports:
       - "9200:9200"
 
@@ -107,13 +107,15 @@ services:
     depends_on:
       - elasticsearch
     volumes:
-      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - ./logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - ./logs:/logs:ro # mesma pasta onde a API grava o app.log
+      - logstashdata:/usr/share/logstash/data # guarda o sincedb (até onde o arquivo já foi lido)
 
   kibana:
     image: docker.elastic.co/kibana/kibana:8.11.0
     container_name: kibana
     environment:
-      - ELASTICSEARCH_HOSTS="http://elasticsearch:9200"
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
     ports:
       - "5601:5601"
     depends_on:
@@ -127,7 +129,6 @@ services:
       - "8000:8000" # "direita": porque é o que esta no command(aqui/Dockerfile); "esquerda": é porque estava livre no meu Windows, poderia ser qualquer outro.
     volumes:
       - .:/app
-      - ./logs:/logs
     env_file:
       - .env
     environment:
@@ -153,3 +154,4 @@ services:
 volumes:
   pgdata:
   esdata:
+  logstashdata:
