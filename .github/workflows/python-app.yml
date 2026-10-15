@@ -5,38 +5,39 @@
 # dela para conferir se a API realmente inicia e responde.
 # Se QUALQUER etapa falhar, o job fica vermelho e o problema aparece na aba "Actions".
 
-name: CI - Testes e Build Docker   # nome que aparece na aba "Actions" do GitHub
+name: CI - Testes e Build Docker # nome que aparece na aba "Actions" do GitHub
 
-on:                  # "on" = quais eventos disparam este workflow
-  push:              # dispara a cada push...
-    branches: [ "main" ]   # ...mas só quando o push for na branch main
+on: # "on" = quais eventos disparam este workflow
+  push: # dispara a cada push...
+    branches: ["main"] # ...mas só quando o push for na branch main
 
 permissions:
-  contents: read     # o workflow só precisa LER o código; menor permissão possível
+  contents: read # o workflow só precisa LER o código; menor permissão possível
 
 # Variáveis de ambiente do WORKFLOW inteiro (valem para todos os jobs e steps).
 # Centralizam o nome da imagem: para trocar o nome ou a tag, muda só aqui.
 env:
-  IMAGE_NAME: fastapi-app            # nome da imagem Docker
-  IMAGE_TAG: latest                  # tag (versão) da imagem
-  CONTAINER_NAME: fastapi-app-ci     # nome do container de validação (usado para ler logs e remover no fim)
+  IMAGE_NAME: fastapi-app # nome da imagem Docker
+  IMAGE_TAG: latest # tag (versão) da imagem
+  CONTAINER_NAME: fastapi-app-ci # nome do container de validação (usado para ler logs e remover no fim)
 
-jobs:                # um workflow é feito de um ou mais jobs
-  test:              # nome (id) do job
-    runs-on: ubuntu-latest   # máquina virtual (runner) onde o job roda: Ubuntu, versão mais recente
+jobs: # um workflow é feito de um ou mais jobs
+  test: # nome (id) do job
+    runs-on: ubuntu-latest # máquina virtual (runner) onde o job roda: Ubuntu, versão mais recente
 
     # "services" sobe containers auxiliares junto com o job.
     # O teste test_database.py precisa de um PostgreSQL de verdade, então subimos um aqui.
     services:
       postgres:
-        image: postgres:16               # imagem oficial do PostgreSQL
+        image: postgres:16 # imagem oficial do PostgreSQL
         env:
-          POSTGRES_USER: postgres        # usuário criado dentro do container
-          POSTGRES_PASSWORD: postgres    # senha (é um banco descartável, só existe durante o job)
-          POSTGRES_DB: livros_test       # banco criado automaticamente na inicialização
+          POSTGRES_USER: postgres # usuário criado dentro do container
+          POSTGRES_PASSWORD: postgres # senha (é um banco descartável, só existe durante o job)
+          POSTGRES_DB: livros_test # banco criado automaticamente na inicialização
         ports:
-          - 5432:5432                    # porta do runner : porta do container -> acessível via localhost:5432
-        options: >-                      # healthcheck: o job só segue quando o Postgres aceitar conexões
+          - 5432:5432 # porta do runner : porta do container -> acessível via localhost:5432
+        options:
+          >- # healthcheck: o job só segue quando o Postgres aceitar conexões
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s
           --health-timeout 5s
@@ -45,24 +46,24 @@ jobs:                # um workflow é feito de um ou mais jobs
     # Variáveis de ambiente disponíveis para TODOS os steps deste job.
     # Substituem o arquivo .env, que não vai para o GitHub (está no .gitignore).
     env:
-      MEU_USUARIO: admin                 # credenciais do HTTP Basic usadas pelo app/auth.py
+      MEU_USUARIO: admin # credenciais do HTTP Basic usadas pelo app/auth.py
       MINHA_SENHA: admin
       # URL assíncrona (asyncpg) que o app/database.py usa
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/livros_test
-      # URL síncrona (psycopg2) que o tests/test_database.py usa para preparar os dados
-      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/livros_test
+      # URL assíncrona que o tests/test_database.py usa para preparar os dados
+      DATABASE_URL_TEST: postgresql+asyncpg://postgres:postgres@localhost:5432/livros_test
 
-    steps:           # passos executados em sequência, de cima para baixo
+    steps: # passos executados em sequência, de cima para baixo
       - name: Checkout do código
-        uses: actions/checkout@v3        # baixa o conteúdo do repositório para dentro do runner
+        uses: actions/checkout@v3 # baixa o conteúdo do repositório para dentro do runner
 
       - name: Instalar Python 3.14
-        uses: actions/setup-python@v5    # ação oficial que instala a versão pedida do Python
+        uses: actions/setup-python@v5 # ação oficial que instala a versão pedida do Python
         with:
-          python-version: "3.14"         # o pyproject.toml exige requires-python >= 3.14
+          python-version: "3.14" # o pyproject.toml exige requires-python >= 3.14
 
       - name: Instalar Poetry
-        run: pip install poetry          # "run" executa um comando de shell no runner
+        run: pip install poetry # "run" executa um comando de shell no runner
 
       - name: Instalar dependências
         # --no-root: instala só as dependências, sem instalar o próprio projeto como pacote

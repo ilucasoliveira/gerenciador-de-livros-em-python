@@ -1,15 +1,16 @@
+import asyncio
 import os
 
-import pytest
-
-# Mesmo motivo do test_auth.py: o app/auth.py exige essas variáveis no import.
+# O app/auth.py exige essas variáveis no import.
 os.environ.setdefault("MEU_USUARIO", "admin")
 os.environ.setdefault("MINHA_SENHA", "admin")
 
-from dotenv import load_dotenv  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine, delete  # noqa: E402
-from sqlalchemy.orm import sessionmaker  # noqa: E402
+import pytest
+from dotenv import load_dotenv
+from fastapi.testclient import TestClient
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 load_dotenv()
 
@@ -19,41 +20,53 @@ from app.models import Base, Livro  # noqa: E402
 USUARIO = os.environ["MEU_USUARIO"]
 SENHA = os.environ["MINHA_SENHA"]
 
-# Banco de teste. No GitHub Actions ele vem do serviço "postgres" definido no workflow.
-# Engine síncrona (psycopg2) só para preparar os dados; a API usa a engine assíncrona
-# do app/database.py, apontando para o MESMO banco via DATABASE_URL.
-DATABASE_URL_TEST = os.getenv("DATABASE_URL_TEST")
-engine = create_engine(DATABASE_URL_TEST)
-TestingSessionLocal = sessionmaker(bind=engine)
+# Precisa ser uma URL assíncrona: postgresql+asyncpg://usuario:senha@localhost:5433/banco
+# Localmente, se DATABASE_URL_TEST não existir, usa a mesma DATABASE_URL do app.
+DATABASE_URL_TEST = os.getenv("DATABASE_URL_TEST") or os.getenv("DATABASE_URL")
+if not DATABASE_URL_TEST:
+    raise RuntimeError(
+        "Defina DATABASE_URL_TEST (ou DATABASE_URL) com uma URL postgresql+asyncpg://..."
+    )
 
-Base.metadata.create_all(bind=engine)  # cria a tabela "livros" se ainda não existir
+# NullPool: não deixa conexões presas a um event loop que já foi fechado.
+engine = create_async_engine(DATABASE_URL_TEST, poolclass=NullPool)
+TestingSessionLocal = async_sessionmaker(bind=engine, expire_on_commit=False)
 
 client = TestClient(app)
 
 
+async def _preparar_banco():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(delete(Livro))
+    async with TestingSessionLocal() as session:
+        session.add(
+            Livro(nome="A Revolução dos Bichos", autor="George Orwell", ano=1945)
+        )
+        await session.commit()
+
+
+async def _limpar_banco():
+    async with TestingSessionLocal() as session:
+        await session.execute(delete(Livro))
+        await session.commit()
+
+
 @pytest.fixture(autouse=True)
 def mock_redis(mocker):
-    # Caminho corrigido: era "main.redis_client", mas o módulo é app.main.
     mock_redis_client = mocker.patch("app.main.redis_client")
-    # get devolvendo None = "não tem cache", então a rota vai buscar no banco.
-    mock_redis_client.get = mocker.AsyncMock(return_value=None)
-    # setex é chamado depois da consulta para salvar no cache; só precisa existir.
+    mock_redis_client.get = mocker.AsyncMock(
+        return_value=None
+    )  # sem cache: vai ao banco
     mock_redis_client.setex = mocker.AsyncMock()
     return mock_redis_client
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def db():
-    db = TestingSessionLocal()
-    # Deixa o banco num estado conhecido: apaga tudo e insere o livro esperado.
-    # Sem isso o teste dependia de dados que só existiam na sua máquina.
-    db.execute(delete(Livro))
-    db.add(Livro(nome="A Revolução dos Bichos", autor="George Orwell", ano=1945))
-    db.commit()
-    yield db
-    db.execute(delete(Livro))  # limpa depois do teste
-    db.commit()
-    db.close()
+    asyncio.run(_preparar_banco())
+    yield
+    asyncio.run(_limpar_banco())
 
 
 def test_get_book(db):
