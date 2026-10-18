@@ -1,6 +1,6 @@
 # 📚 Gerenciador de Livros: API REST com FastAPI
 
-API RESTful de gerenciamento de livros desenvolvida com **FastAPI**, **SQLAlchemy (async)**, **PostgreSQL**, **Redis** e **Celery**, totalmente containerizada com **Docker Compose**. Projeto prático do curso **Full Stack Python da EBAC**.
+API RESTful de gerenciamento de livros desenvolvida com **FastAPI**, **SQLAlchemy (async)**, **PostgreSQL**, **Redis**, **Celery** e **Kafka**, com logs centralizados no **ELK Stack**, testes com **pytest** e CI no **GitHub Actions**, totalmente containerizada com **Docker Compose**. Projeto prático do curso **Full Stack Python da EBAC**.
 
 > Sobe com dois comandos. Não é preciso instalar Python, Poetry, PostgreSQL ou Redis na máquina, só Docker.
 
@@ -12,7 +12,9 @@ Este projeto simula o back-end de uma livraria, expondo endpoints CRUD para gere
 
 Além do CRUD, a aplicação demonstra **processamento assíncrono em background** com **Celery**: tarefas demoradas são publicadas em uma fila no Redis e executadas por um worker separado, sem bloquear a resposta HTTP.
 
-A aplicação roda em quatro containers orquestrados pelo Docker Compose: a API, o banco, o cache/broker e o worker do Celery, com healthcheck, controle de ordem de inicialização e volume nomeado para persistência dos dados.
+A aplicação roda em dez containers orquestrados pelo Docker Compose: a API, o banco, o cache/broker, o worker do Celery, o Kafka (com ZooKeeper e Kafka UI) e o ELK Stack (Elasticsearch, Logstash e Kibana), com healthcheck, controle de ordem de inicialização e volume nomeado para persistência dos dados.
+
+> ℹ️ O projeto evoluiu junto com o curso: começou em junho de 2026 com um dicionário em memória e ganhou uma camada nova a cada módulo. Kafka, ELK e Kubernetes estão aqui como exercício de estudo, não como a arquitetura que eu recomendaria para um CRUD deste tamanho.
 
 ---
 
@@ -26,6 +28,11 @@ A aplicação roda em quatro containers orquestrados pelo Docker Compose: a API,
 - [PostgreSQL 18](https://www.postgresql.org/) via **asyncpg**
 - [Redis 8](https://redis.io/) via `redis.asyncio`: cache de leitura e broker do Celery
 - [Celery 5](https://docs.celeryq.dev/): fila de tarefas em background
+- [Apache Kafka](https://kafka.apache.org/) (imagens Confluent 7.9) via `kafka-python`: eventos de criação de livros, com [Kafka UI](https://github.com/provectus/kafka-ui) para inspecionar os tópicos
+- [ELK Stack 8.11](https://www.elastic.co/elastic-stack): logs em JSON lidos pelo Logstash, indexados no Elasticsearch e consultados no Kibana
+- [pytest](https://docs.pytest.org/) e `pytest-mock`: testes automatizados
+- [GitHub Actions](https://docs.github.com/actions): CI com testes e validação da imagem Docker
+- Manifests de [Kubernetes](https://kubernetes.io/) (`deployment.yaml` e `service.yaml`): estudo de deploy em cluster local
 - [Pydantic](https://docs.pydantic.dev/): validação e serialização de dados
 - [python-dotenv](https://pypi.org/project/python-dotenv/): variáveis de ambiente
 - [Poetry](https://python-poetry.org/): gerenciamento de dependências
@@ -67,15 +74,19 @@ A API acessa o banco pelo hostname `db` e o Redis pelo hostname `redis`, ambos n
 
 O Redis acumula duas funções: cache das listagens e broker/backend do Celery.
 
+O diagrama mostra o núcleo da aplicação. Os serviços de estudo também sobem no mesmo Compose: Kafka com ZooKeeper e Kafka UI (porta `8080`), e Elasticsearch, Logstash e Kibana (portas `9200` e `5601`). Eles estão descritos nas seções [Eventos com Kafka](#-eventos-com-kafka) e [Logs com ELK Stack](#-logs-com-elk-stack).
+
 ---
 
 ## 📋 Funcionalidades
 
 | Método | Endpoint             | Descrição                                 | Auth |
 | ------ | -------------------- | ----------------------------------------- | ---- |
-| GET    | `/`                  | Health check da aplicação                 | ❌   |
+| GET    | `/`                  | Rota raiz                                 | ❌   |
+| GET    | `/health`            | Health check da aplicação                 | ❌   |
 | POST   | `/calcular/soma`     | Enfileira uma soma no Celery              | ❌   |
 | POST   | `/calcular/fatorial` | Enfileira um fatorial no Celery           | ❌   |
+| GET    | `/tarefas/recentes`  | Status e resultado das últimas 50 tarefas | ❌   |
 | GET    | `/ler`               | Lista os livros com paginação (com cache) | ✅   |
 | POST   | `/adicionar`         | Adiciona um novo livro                    | ✅   |
 | PATCH  | `/atualizar/{id}`    | Atualização parcial de um livro           | ✅   |
@@ -173,6 +184,65 @@ Dois pontos que costumam passar despercebidos:
 **A URL precisa declarar o driver.** `postgresql://` faz o SQLAlchemy escolher o psycopg2, que é síncrono, e a engine assíncrona recusa. O formato correto é `postgresql+asyncpg://`.
 
 **`session.add()` não é assíncrono.** Ele apenas coloca o objeto na sessão em memória. Só `commit`, `refresh`, `execute`, `flush` e `delete` recebem `await`.
+
+---
+
+## 📨 Eventos com Kafka
+
+Toda vez que um livro é criado com sucesso, a API publica um evento no tópico `livros_eventos`:
+
+```json
+{"acao": "criar", "livro": {"nome": "...", "autor": "...", "ano": 1954, "sinopse": "..."}}
+```
+
+O producer (`app/kafka_producer.py`) é criado sob demanda na primeira publicação e serializa o evento em JSON. O Kafka roda com ZooKeeper, e o Kafka UI fica em `http://localhost:8080` para ver os tópicos e as mensagens.
+
+---
+
+## 📊 Logs com ELK Stack
+
+A configuração de logging fica em `logging.yaml` e escreve em dois lugares: no terminal, em texto, e em `logs/app.log`, em JSON (uma linha por evento, via `app/log_formatter.py`). O log de acesso do uvicorn também vai para o arquivo.
+
+O caminho de um evento de log:
+
+1. A API escreve a linha JSON em `logs/app.log`.
+2. O Logstash (`logstash/logstash.conf`) lê o arquivo, quebra as linhas de acesso em campos (IP, método, rota, status) e usa o horário da aplicação como `@timestamp`.
+3. O Elasticsearch guarda um índice por dia (`livros-logs-AAAA.MM.DD`).
+4. O Kibana, em `http://localhost:5601`, consulta esses índices.
+
+---
+
+## 🧪 Testes
+
+```bash
+poetry run pytest
+```
+
+| Arquivo                      | O que testa                                                    |
+| ---------------------------- | -------------------------------------------------------------- |
+| `tests/test_auth.py`         | Autenticação HTTP Basic (credenciais certas e erradas)         |
+| `tests/test_database.py`     | Listagem de livros contra um PostgreSQL real (`DATABASE_URL_TEST`) |
+| `tests/test_tasks.py`        | Funções de soma e fatorial, incluindo fatorial negativo        |
+| `tests/test_tasks_celery.py` | Execução das tasks do Celery                                   |
+| `tests/test_tasks_endpoint.py` | Endpoints `/calcular/*` com o Celery mockado (`pytest-mock`) |
+
+---
+
+## 🔁 CI com GitHub Actions
+
+O workflow `.github/workflows/python-app.yml` roda a cada push na `main`:
+
+1. Sobe um PostgreSQL temporário como serviço do job.
+2. Instala Python 3.14, Poetry e as dependências.
+3. Roda o `pytest`.
+4. Constrói a imagem Docker, sobe um container dela e confere se a API responde.
+5. Remove o container de validação.
+
+---
+
+## ☸️ Kubernetes (estudo)
+
+`deployment.yaml` e `service.yaml` descrevem a API num cluster local: 2 réplicas, `readinessProbe` em `/docs`, limites de CPU e memória e um Service do tipo ClusterIP. As variáveis vêm de um Secret criado a partir do `.env`. O `script.sh` aplica os dois arquivos e faz o `port-forward` para `localhost:8000`. Os manifests sobem só a API; banco, Redis e os demais serviços não estão no cluster.
 
 ---
 
@@ -313,9 +383,21 @@ gerenciador-de-livros-em-python/
 │   ├── database.py       # engine e sessão assíncrona do SQLAlchemy
 │   ├── models.py         # modelo ORM (tabela Livro)
 │   ├── schemas.py        # schemas Pydantic (validação de entrada/saída)
+│   ├── kafka_producer.py # producer do Kafka (eventos de livros)
+│   ├── log_formatter.py  # formatador de logs em JSON
 │   └── create_table.py   # script para criar as tabelas no banco
+├── tests/                # testes com pytest
+├── logstash/
+│   └── logstash.conf     # pipeline: app.log -> Elasticsearch
+├── logs/                 # app.log, lido pelo Logstash
+├── .github/workflows/
+│   └── python-app.yml    # CI: testes + build e validação da imagem
+├── logging.yaml          # configuração de logging (terminal + JSON)
+├── deployment.yaml       # Kubernetes: Deployment da API (estudo)
+├── service.yaml          # Kubernetes: Service ClusterIP (estudo)
+├── script.sh             # aplica os manifests e faz port-forward
 ├── Dockerfile            # imagem da aplicação
-├── docker-compose.yml    # orquestração (app + db + redis + celery)
+├── docker-compose.yml    # orquestração (app, db, redis, celery, kafka, ELK)
 ├── .dockerignore
 ├── pyproject.toml        # dependências (Poetry)
 ├── poetry.lock
@@ -453,12 +535,13 @@ Todos os campos acima ficam opcionais, permitindo atualizações parciais via `P
 
 Pontos identificados e conscientemente adiados, por se tratar de um projeto de estudo:
 
-- **Sem consulta de status das tarefas**: os endpoints `/calcular/*` devolvem um `task_id`, mas não existe rota que consulte o resultado. Falta um `GET /tarefas/{task_id}` usando o `AsyncResult` do Celery.
+- **Sem consulta de uma tarefa específica**: `GET /tarefas/recentes` mostra as últimas 50, mas ainda não existe `GET /tarefas/{task_id}` para consultar uma só.
 - **`KEYS` em vez de `SCAN`**: a inspeção e a invalidação do cache usam `KEYS`, que varre todo o keyspace. O Redis é single-threaded, então em bases grandes isso bloqueia o servidor.
 - **Chaves `livro:{id}` sem consumidor**: são gravadas e invalidadas, mas nenhum endpoint as lê. Falta um `GET /livro/{id}`. A chave também é gravada a partir do schema de entrada, sem o campo `id`.
 - **Falha do cache derruba a requisição**: se o Redis estiver indisponível, os endpoints retornam `500`, mesmo com a operação no banco bem-sucedida. O ideal é registrar o erro em log e seguir sem cache.
 - **Sem migrações**: o schema é criado via `create_all()`, que não altera tabelas existentes. Alembic resolveria.
-- **Sem testes automatizados**: toda a verificação é manual, via Swagger.
+- **Cobertura de testes parcial**: os testes cobrem autenticação, listagem e as tasks do Celery; criação, atualização, exclusão e cache ainda são verificados manualmente pelo Swagger.
+- **Evento só na criação**: o Kafka recebe evento ao criar um livro, mas não ao atualizar ou excluir.
 
 ---
 
